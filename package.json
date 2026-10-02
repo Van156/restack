@@ -1,0 +1,58 @@
+{
+  "name": "base-template",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "vp run -r dev",
+    "build": "vp run -r build",
+    "check-types": "vp run -r check-types",
+    "check": "oxlint && oxfmt --write",
+    "test": "bun test",
+    "lint": "vp lint",
+    "format": "vp fmt",
+    "staged": "vp staged",
+    "storybook": "vp run --filter @base-template/ui storybook",
+    "build-storybook": "vp run --filter @base-template/ui build-storybook",
+    "dev:web": "vp run --filter web dev:bare",
+    "dev:server": "vp run --filter server dev",
+    "db:push": "vp run --filter @base-template/db db:push",
+    "db:studio": "vp run --filter @base-template/db db:studio",
+    "db:generate": "vp run --filter @base-template/db db:generate",
+    "db:migrate": "vp run --filter @base-template/db db:migrate",
+    "db:test:prepare": "vp run --filter @base-template/db db:test:prepare",
+    "db:seed:admins": "vp run --filter server db:seed:admins",
+    "db:start": "docker compose up -d postgres",
+    "db:watch": "docker compose up postgres",
+    "db:stop": "docker compose stop postgres",
+    "db:down": "docker compose down postgres",
+    "deploy": "vp run --filter @base-template/infra deploy",
+    "destroy": "vp run --filter @base-template/infra destroy",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "env:generate": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/server/ && varlock codegen --path ./packages/db/",
+    "postinstall": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/server/ && varlock codegen --path ./packages/db/",
+    "auth:generate": "cd apps/server && pnpm run auth:generate"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@base-template/config": "workspace:*",
+    "@cloudflare/workers-types": "^5.20260906.1",
+    "@types/bun": "catalog:",
+    "lefthook": "^2.1.12",
+    "oxfmt": "^0.66.0",
+    "oxlint": "^1.81.0",
+    "rolldown": "1.2.7",
+    "typescript": "catalog:",
+    "varlock": "catalog:",
+    "vite-plus": "0.3.1"
+  },
+  "packageManager": "pnpm@12.4.2"
+}

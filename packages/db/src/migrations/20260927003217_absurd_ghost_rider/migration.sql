@@ -1,0 +1,5 @@
+ALTER TABLE "audit_log" ALTER COLUMN "actor_user_id" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "audit_log" DROP CONSTRAINT "audit_log_organization_id_organization_id_fkey", ADD CONSTRAINT "audit_log_organization_id_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "organization"("id") ON DELETE SET NULL;--> statement-breakpoint
+ALTER TABLE "audit_log" DROP CONSTRAINT "audit_log_actor_user_id_user_id_fkey", ADD CONSTRAINT "audit_log_actor_user_id_user_id_fkey" FOREIGN KEY ("actor_user_id") REFERENCES "user"("id") ON DELETE SET NULL;--> statement-breakpoint
+ALTER TABLE "audit_log" DROP CONSTRAINT "audit_log_impersonator_user_id_user_id_fkey", ADD CONSTRAINT "audit_log_impersonator_user_id_user_id_fkey" FOREIGN KEY ("impersonator_user_id") REFERENCES "user"("id") ON DELETE SET NULL;--> statement-breakpoint
+ALTER TABLE "audit_log" DROP CONSTRAINT "auditLog_scope_organizationId_check", ADD CONSTRAINT "auditLog_scope_organizationId_check" CHECK ("scope" != 'platform' OR "organization_id" IS NULL);

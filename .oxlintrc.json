@@ -1,0 +1,66 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {},
+  "ignorePatterns": ["tests/lint-boundaries/fixtures/**"],
+  "env": {
+    "builtin": true
+  },
+  "overrides": [
+    {
+      "files": ["apps/web/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@/features/*/**"],
+                "message": "Import a feature through its public API (@/features/<name>)"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/web/src/shared/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@/features/*/**"],
+                "message": "Import a feature through its public API (@/features/<name>)"
+              },
+              {
+                "group": ["@/features", "@/features/**", "@/routes/**"],
+                "message": "shared/ must not depend on features/ or routes/"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/ui/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@/**", "web", "web/**"],
+                "message": "packages/ui must stay app-agnostic"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

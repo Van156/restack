@@ -1,0 +1,50 @@
+/**
+ * Presentational components in `apps/web/src` that must have a sibling
+ * `<name>.stories.tsx`. Paths are relative to `apps/web/src`.
+ *
+ * There is no reliable automatic rule for "presentational" (containers and
+ * presentational components share folders), so this registry is explicit: add a
+ * component here when it takes only props/slots, and write its story in the same change.
+ */
+export const APP_PRESENTATIONAL_COMPONENTS: readonly string[] = [
+  "shared/components/layout/app-header.tsx",
+  "shared/components/layout/page-header.tsx",
+  "shared/components/feedback/empty-state.tsx",
+  "shared/components/layout/sidebar-org-switcher.tsx",
+  "shared/components/layout/sidebar-user-menu.tsx",
+  "shared/components/layout/app-breadcrumbs.tsx",
+  "shared/components/layout/app-sidebar.tsx",
+  "shared/components/layout/app-shell.tsx",
+  "shared/components/data-table/data-table.tsx",
+  "shared/components/data-table/data-table-toolbar.tsx",
+  "shared/components/data-table/data-table-column-header.tsx",
+  "shared/components/data-table/data-table-view-options.tsx",
+  "shared/components/data-table/data-table-faceted-filter.tsx",
+  "shared/components/data-table/data-table-date-filter.tsx",
+  "shared/components/data-table/data-table-slider-filter.tsx",
+  "shared/components/data-table/data-table-pagination.tsx",
+  "shared/components/data-table/data-table-skeleton.tsx",
+  "shared/components/data-table/data-table-action-bar.tsx",
+  "shared/components/data-table/data-table-export-csv.tsx",
+  "shared/components/data-table/data-table-advanced-toolbar.tsx",
+  "shared/components/data-table/data-table-filter-list.tsx",
+  "shared/components/data-table/data-table-filter-menu.tsx",
+  "shared/components/data-table/data-table-sort-list.tsx",
+  "shared/components/data-table/data-table-filter-value.tsx",
+  "features/auth/components/auth-layout.tsx",
+  "features/auth/components/auth-card.tsx",
+  "features/auth/components/auth-brand-panel.tsx",
+  "features/auth/components/auth-form-error.tsx",
+  "features/auth/components/auth-switch-prompt.tsx",
+  "features/auth/components/auth-status-notice.tsx",
+  "features/auth/components/social-sign-in-buttons.tsx",
+  "features/account/components/profile-form.tsx",
+  "features/account/components/change-email-card.tsx",
+  "features/account/components/change-password-card.tsx",
+  "features/account/components/set-password-card.tsx",
+  "features/account/components/sessions-card.tsx",
+  "features/account/components/theme-preference-card.tsx",
+  "features/account/components/delete-account-card.tsx",
+  "features/organizations/components/org-danger-zone.tsx",
+  "features/admin/components/user-detail-tabs.tsx",
+];

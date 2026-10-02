@@ -1,0 +1,1 @@
+ALTER TYPE "audit_log_scope" ADD VALUE 'user';

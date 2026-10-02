@@ -1,0 +1,183 @@
+@import "tailwindcss";
+@import "@fontsource-variable/ibm-plex-sans";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+/* Resolves from this file (packages/ui/src/styles) to the repo-root `apps/`, so app classes are scanned. */
+@source "../../../../apps/**/*.{ts,tsx}";
+@source "../**/*.{ts,tsx}";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Single knob for the accent and the neutral tint. Everything hue-dependent derives from it. */
+  --brand-hue: 220;
+
+  --background: oklch(0.985 0.003 var(--brand-hue));
+  --foreground: oklch(0.21 0.012 calc(var(--brand-hue) + 5));
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.45 0.08 var(--brand-hue));
+  --primary-foreground: oklch(0.985 0.003 var(--brand-hue));
+  --secondary: oklch(0.955 0.006 var(--brand-hue));
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.955 0.006 var(--brand-hue));
+  --muted-foreground: oklch(0.5 0.015 calc(var(--brand-hue) + 5));
+  --accent: oklch(0.94 0.012 var(--brand-hue));
+  --accent-foreground: var(--foreground);
+  --destructive: oklch(0.53 0.19 27);
+  --destructive-foreground: oklch(0.985 0.003 var(--brand-hue));
+  --success: oklch(0.52 0.12 150);
+  --success-foreground: oklch(0.985 0.003 var(--brand-hue));
+  --warning: oklch(0.7 0.14 75);
+  --warning-foreground: oklch(0.21 0.012 calc(var(--brand-hue) + 5));
+  --info: oklch(0.52 0.1 255);
+  --info-foreground: oklch(0.985 0.003 var(--brand-hue));
+  --border: oklch(0.9 0.006 var(--brand-hue));
+  --input: oklch(0.86 0.008 var(--brand-hue));
+  --ring: var(--primary);
+
+  /* Categorical, alternating lightness; checked for deuteranopia separation. */
+  --chart-1: oklch(0.4 0.08 var(--brand-hue));
+  --chart-2: oklch(0.78 0.14 75);
+  --chart-3: oklch(0.58 0.16 330);
+  --chart-4: oklch(0.66 0.13 145);
+  --chart-5: oklch(0.48 0.15 275);
+
+  --radius: 0.25rem;
+
+  /* Ink panel in both modes: components inside it read light-on-dark. */
+  --sidebar: oklch(0.22 0.015 calc(var(--brand-hue) + 5));
+  --sidebar-foreground: oklch(0.93 0.006 var(--brand-hue));
+  --sidebar-primary: oklch(0.7 0.09 calc(var(--brand-hue) - 8));
+  --sidebar-primary-foreground: oklch(0.22 0.015 calc(var(--brand-hue) + 5));
+  --sidebar-accent: oklch(0.29 0.015 calc(var(--brand-hue) + 5));
+  --sidebar-accent-foreground: var(--sidebar-foreground);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: var(--sidebar-primary);
+}
+
+.dark {
+  --background: oklch(0.17 0.01 calc(var(--brand-hue) + 5));
+  --foreground: oklch(0.95 0.005 var(--brand-hue));
+  --card: oklch(0.205 0.012 calc(var(--brand-hue) + 5));
+  --card-foreground: var(--foreground);
+  --popover-foreground: var(--foreground);
+  --secondary-foreground: var(--foreground);
+  --accent-foreground: var(--foreground);
+  --popover: oklch(0.23 0.013 calc(var(--brand-hue) + 5));
+  --primary: oklch(0.7 0.09 calc(var(--brand-hue) - 8));
+  --primary-foreground: oklch(0.17 0.01 calc(var(--brand-hue) + 5));
+  --secondary: oklch(0.26 0.012 calc(var(--brand-hue) + 5));
+  --muted: oklch(0.26 0.012 calc(var(--brand-hue) + 5));
+  --muted-foreground: oklch(0.7 0.012 var(--brand-hue));
+  --accent: oklch(0.3 0.015 calc(var(--brand-hue) + 5));
+  --destructive: oklch(0.68 0.17 25);
+  --destructive-foreground: oklch(0.17 0.01 calc(var(--brand-hue) + 5));
+  --success: oklch(0.72 0.13 150);
+  --success-foreground: oklch(0.17 0.01 calc(var(--brand-hue) + 5));
+  --warning: oklch(0.8 0.13 80);
+  --warning-foreground: oklch(0.17 0.01 calc(var(--brand-hue) + 5));
+  --info: oklch(0.72 0.1 255);
+  --info-foreground: oklch(0.17 0.01 calc(var(--brand-hue) + 5));
+  --border: oklch(0.3 0.012 calc(var(--brand-hue) + 5));
+  --input: oklch(0.34 0.012 calc(var(--brand-hue) + 5));
+  --ring: var(--primary);
+
+  --chart-1: oklch(0.72 0.09 var(--brand-hue));
+  --chart-2: oklch(0.84 0.13 75);
+  --chart-3: oklch(0.58 0.16 330);
+  --chart-4: oklch(0.76 0.13 145);
+  --chart-5: oklch(0.5 0.15 275);
+
+  --sidebar: oklch(0.135 0.01 calc(var(--brand-hue) + 5));
+  --sidebar-accent: oklch(0.205 0.01 calc(var(--brand-hue) + 5));
+}
+
+@theme inline {
+  --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-info-foreground: var(--info-foreground);
+  --color-info: var(--info);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning: var(--warning);
+  --color-success-foreground: var(--success-foreground);
+  --color-success: var(--success);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 5px;
+  --radius-xl: 6px;
+  --radius-2xl: 8px;
+  --radius-3xl: 10px;
+  --radius-4xl: 12px;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply font-sans bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+
+  /*
+   * The sidebar is an ink panel in both modes, so the general light/dark tokens read wrong
+   * inside it. Remap them for its subtree: any stray `text-muted-foreground`, `bg-accent`,
+   * `border`, `ring` or `Skeleton` then renders correctly. Popovers, dropdowns, tooltips and
+   * drawers opened from the sidebar are portaled to <body>, outside this subtree, so they keep
+   * the regular tokens. The mobile sheet carries the same data-slot and gets the same remap.
+   */
+  [data-slot="sidebar"] {
+    --background: var(--sidebar);
+    --foreground: var(--sidebar-foreground);
+    --muted-foreground: color-mix(in oklab, var(--sidebar-foreground) 65%, transparent);
+    --muted: var(--sidebar-accent);
+    --accent: var(--sidebar-accent);
+    --accent-foreground: var(--sidebar-accent-foreground);
+    --secondary: var(--sidebar-accent);
+    --secondary-foreground: var(--sidebar-accent-foreground);
+    --primary: var(--sidebar-primary);
+    --primary-foreground: var(--sidebar-primary-foreground);
+    --border: var(--sidebar-border);
+    --input: var(--sidebar-border);
+    --ring: var(--sidebar-ring);
+  }
+}

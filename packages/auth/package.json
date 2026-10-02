@@ -1,0 +1,29 @@
+{
+  "name": "@base-template/auth",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./permissions": "./src/permissions/index.ts",
+    "./email": "./src/email/index.ts",
+    "./audit": "./src/audit/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "check-types": "tsc -b",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@base-template/db": "workspace:*",
+    "@better-auth/core": "1.7.5",
+    "@better-auth/drizzle-adapter": "1.7.5",
+    "better-auth": "catalog:",
+    "drizzle-orm": "catalog:",
+    "resend": "^6.30.0",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@base-template/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}
