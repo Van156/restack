@@ -264,7 +264,9 @@ export const syncRouter = {
         const now = context.clock.now();
         const deviceAt = record.deviceRecordedAt > now ? now : record.deviceRecordedAt;
         try {
-          results.push({ ...base, ...(await applyRecord(context, record, deviceAt)) });
+          // Acting tokens are checked at the time the device recorded the action.
+          const recordContext = { ...context, actingTokenValidAt: deviceAt };
+          results.push({ ...base, ...(await applyRecord(recordContext, record, deviceAt)) });
         } catch (error) {
           if (!(error instanceof ORPCError)) {
             throw error;

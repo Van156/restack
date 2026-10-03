@@ -3,6 +3,12 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 /** How long a PIN switch-in keeps attributing actions to the Staff member who entered the PIN. */
 export const ACTING_TOKEN_TTL_MINUTES = 15;
 
+/**
+ * A synced offline record can be attributed through a token that expired meanwhile, as long as it
+ * was recorded within this window before arriving (the offline limit, see restaurant.md#sync).
+ */
+export const MAX_OFFLINE_TOKEN_AGE_MS = 48 * 60 * 60 * 1000;
+
 const MINUTE_MS = 60 * 1000;
 /** Domain separation: the same server secret signs other things, never confuse their signatures. */
 const SIGNING_CONTEXT = "restack:acting-token:v1:";

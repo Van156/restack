@@ -211,6 +211,105 @@ describe.skipIf(!reachable)("restaurant sync: batch push", () => {
     });
   });
 
+  describe("acting tokens at device time", () => {
+    const MINUTE = 60_000;
+    const HOUR = 60 * MINUTE;
+
+    /** Mints a 15 minute acting token for the Waiter at `mintedAt`, then returns to the sync clock. */
+    const mintWaiterToken = async (mintedAt: Date) => {
+      harness.clock.setNow(mintedAt);
+      const { actingToken } = await call(
+        restaurantRouter.staff.switchIn,
+        {
+          locationId: scenario.seed.locations.a,
+          memberId: scenario.seed.staff.waiterA.memberId,
+          pin: "4821",
+        },
+        { context: await scenario.as("cashierA") },
+      );
+      harness.clock.setNow(SYNC_AT);
+      return actingToken;
+    };
+
+    test("a record made at minute 10 of a 15 minute token, synced 20 hours later, is attributed to that member", async () => {
+      const mintedAt = new Date(SYNC_AT.getTime() - 20 * HOUR);
+      const actingToken = await mintWaiterToken(mintedAt);
+
+      const [result] = await push([
+        {
+          ...line("line-1", {}, new Date(mintedAt.getTime() + 10 * MINUTE)),
+          actingToken,
+        },
+      ]);
+
+      expect(result!.status).toBe("applied");
+      const [stored] = await lines();
+      expect(stored!.recordedByMemberId).toBe(scenario.seed.staff.waiterA.memberId);
+    });
+
+    test("a record made at minute 20, after the token expired, is rejected", async () => {
+      const mintedAt = new Date(SYNC_AT.getTime() - 20 * HOUR);
+      const actingToken = await mintWaiterToken(mintedAt);
+
+      const [result] = await push([
+        {
+          ...line("line-1", {}, new Date(mintedAt.getTime() + 20 * MINUTE)),
+          actingToken,
+        },
+      ]);
+
+      expect(result).toMatchObject({ status: "rejected", reason: { code: "FORBIDDEN" } });
+      expect(await lines()).toHaveLength(0);
+    });
+
+    test("a record older than the 48 hour offline window is rejected even inside the token's life", async () => {
+      const mintedAt = new Date(SYNC_AT.getTime() - 50 * HOUR);
+      const actingToken = await mintWaiterToken(mintedAt);
+
+      const [result] = await push([
+        {
+          ...line("line-1", {}, new Date(mintedAt.getTime() + 5 * MINUTE)),
+          actingToken,
+        },
+      ]);
+
+      expect(result).toMatchObject({ status: "rejected", reason: { code: "FORBIDDEN" } });
+    });
+
+    test("a device clock ahead of the server cannot stretch an expired token", async () => {
+      const mintedAt = new Date(SYNC_AT.getTime() - 20 * HOUR);
+      const actingToken = await mintWaiterToken(mintedAt);
+
+      const [result] = await push([
+        { ...line("line-1", {}, new Date(SYNC_AT.getTime() + HOUR)), actingToken },
+      ]);
+
+      expect(result).toMatchObject({ status: "rejected", reason: { code: "FORBIDDEN" } });
+    });
+
+    test("a payment record is checked at its device time too", async () => {
+      const mintedAt = new Date(SYNC_AT.getTime() - 20 * HOUR);
+      harness.clock.setNow(mintedAt);
+      const { actingToken } = await call(
+        restaurantRouter.staff.switchIn,
+        {
+          locationId: scenario.seed.locations.a,
+          memberId: scenario.seed.staff.cashierA.memberId,
+          pin: "4821",
+        },
+        { context: await scenario.as("cashierA") },
+      );
+      harness.clock.setNow(SYNC_AT);
+      await push([line("line-1")]);
+
+      const [result] = await push([
+        { ...payment("pay-1", {}, new Date(mintedAt.getTime() + 10 * MINUTE)), actingToken },
+      ]);
+
+      expect(result!.status).toBe("applied");
+    });
+  });
+
   describe("voids", () => {
     test("an unsent line is voided by the key it was recorded with", async () => {
       const results = await push([

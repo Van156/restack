@@ -7,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import type { Clock } from "../../context";
-import { verifyActingToken } from "../../lib/acting-token";
+import { MAX_OFFLINE_TOKEN_AGE_MS, verifyActingToken } from "../../lib/acting-token";
 import { assertLocationAccess } from "../../lib/location-scope";
 import type { LocationScopeContext } from "../../lib/location-scope";
 
@@ -16,6 +16,11 @@ export type OrderContext = LocationScopeContext & {
   db: Database;
   clock: Clock;
   actingTokenSecret: string;
+  /**
+   * Set for a synced offline record: acting tokens are checked at this instant (the record's
+   * device time, never after the server clock) instead of at the server's now.
+   */
+  actingTokenValidAt?: Date;
   session: { user: { id: string } };
   auditLogger: import("@base-template/auth/audit").AuditLogger;
 };
@@ -69,6 +74,22 @@ export function assertSessionUnsettled(session: TableSessionRow): void {
 
 const INVALID_ACTING_TOKEN = "The acting token is invalid, expired or not for this Location.";
 
+/**
+ * The instant a token's expiry is checked: the server's now online, the record's device time for
+ * a synced one. A device time older than the offline window is checked as expired.
+ */
+function actingTokenCheckTime(context: OrderContext): Date {
+  const now = context.clock.now();
+  const at = context.actingTokenValidAt;
+  if (!at) {
+    return now;
+  }
+  if (now.getTime() - at.getTime() > MAX_OFFLINE_TOKEN_AGE_MS) {
+    return now;
+  }
+  return at.getTime() > now.getTime() ? now : at;
+}
+
 /** A member verified from an acting token, with their resolved Role permissions. */
 export type ActingMember = {
   id: string;
@@ -85,7 +106,11 @@ export async function resolveActingMember(
   locationId: string,
   actingToken: string,
 ): Promise<ActingMember> {
-  const claims = verifyActingToken(context.actingTokenSecret, actingToken, context.clock.now());
+  const claims = verifyActingToken(
+    context.actingTokenSecret,
+    actingToken,
+    actingTokenCheckTime(context),
+  );
   if (!claims || claims.organizationId !== context.org.id || claims.locationId !== locationId) {
     throw new ORPCError("FORBIDDEN", { message: INVALID_ACTING_TOKEN });
   }
