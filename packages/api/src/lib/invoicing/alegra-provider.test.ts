@@ -158,7 +158,7 @@ describe("AlegraInvoicingProvider", () => {
             total: 10_801,
             taxClass: "impoconsumo",
           },
-          { name: "Fries", quantity: 2, base: 10_000, tax: 800, total: 10_800, taxClass: "iva" },
+          { name: "Fries", quantity: 2, base: 10_000, tax: 800, total: 10_800, taxClass: "iva19" },
         ],
       }),
     );
