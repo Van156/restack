@@ -4,12 +4,12 @@ import { toast } from "sonner";
 
 import { authClient } from "@/app/auth-client";
 import { client } from "@/app/orpc";
-import { useOfflineQueue } from "@/features/offline-queue";
+import { useOfflineQueue, type RecordActor } from "@/features/offline-queue";
 import { useRuntime } from "@/shared/hooks/use-runtime";
 
 import type { OrderAction } from "../lib/order-action";
 import { describeOrderError } from "../lib/order-errors";
-import { executeOrderAction, type RecordActor } from "../lib/order-gateway";
+import { executeOrderAction } from "../lib/order-gateway";
 import { waiterQueryKey } from "./use-floor-queries";
 
 /**

@@ -6,13 +6,12 @@ import {
   DialogTitle,
 } from "@base-template/ui/components/dialog";
 
-import { OverridePrompt } from "@/features/override-prompt";
+import { DiscountDialog, OverridePrompt } from "@/features/override-prompt";
 
 import type { FloorPlanArea } from "../lib/floor-plan";
 import type { MenuPickCategory, MenuPickItem } from "../lib/menu-view";
 import type { OrderViewLine } from "../lib/order-view";
 import type { Panel } from "../lib/table-panel";
-import DiscountDialog from "./discount-dialog";
 import LineComposerDialog, { type ComposedLine } from "./line-composer-dialog";
 import MenuPicker from "./menu-picker";
 import MoveTableDialog from "./move-table-dialog";

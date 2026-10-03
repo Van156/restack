@@ -7,7 +7,6 @@ import {
   OnlineSwitchInRequiredError,
   executeOrderAction,
   toQueueInput,
-  withActor,
 } from "./order-gateway";
 import type { OrderAction, OrdersApi } from "./order-action";
 
@@ -153,30 +152,6 @@ describe("toQueueInput", () => {
     expect(
       toQueueInput({ type: "discount", session, kind: "amount", value: 100, overrideId: "o" }),
     ).toBeNull();
-  });
-});
-
-describe("withActor", () => {
-  const input = { kind: "order_line" as const, idempotencyKey: "k1", payload: {} };
-
-  test("an online switch-in attributes the record with its acting token", async () => {
-    expect(await withActor(input, { token: "tok" }, now)).toEqual({ ...input, actingToken: "tok" });
-  });
-
-  test("an offline switch-in signs key, kind and the time the record is stamped with", async () => {
-    const signed = await withActor(input, { signer }, now);
-
-    expect(signed.deviceRecordedAt).toEqual(now);
-    expect(signed.offlineActor).toEqual({
-      memberId: "mem1",
-      epoch: 2,
-      mac: `k1|order_line|${now.getTime()}`,
-    });
-    expect(signed).not.toHaveProperty("actingToken");
-  });
-
-  test("with nobody acting the record goes under the device account", async () => {
-    expect(await withActor(input, {}, now)).toEqual(input);
   });
 });
 

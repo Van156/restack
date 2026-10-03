@@ -17,6 +17,7 @@ export {
   type ConnectivityEvent,
   type ConnectivityState,
 } from "./lib/connectivity";
+export { withActor, type QueuedAction, type RecordActor } from "./lib/record-actor";
 export { createLocalStorageAdapter } from "./lib/storage";
 export { createSyncTransport } from "./lib/sync-transport";
 export { QUEUE_KINDS } from "./lib/types";
