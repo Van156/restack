@@ -1,8 +1,9 @@
 import { businessDayBounds, businessDayOf } from "@base-template/db/lib/business-day";
 import type { BusinessDayBounds } from "@base-template/db/lib/business-day";
 import * as schema from "@base-template/db/schema";
+import { computeBill } from "@base-template/db/lib/bill";
 import { ORPCError } from "@orpc/server";
-import { and, asc, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 
 import type { DbExecutor } from "./executor";
 import { accessibleLocationIds, assertLocationAccess } from "./location-scope";
@@ -88,13 +89,42 @@ export async function loadSettledBills(
     list.push({ tender: payment.tender, amount: payment.amount });
     paymentsOf.set(payment.billId, list);
   }
-  return bills.map((row) => ({
-    id: row.id,
-    locationId: row.locationId,
-    settledByMemberId: row.settledByMemberId,
-    total: row.total ?? 0,
-    tip: row.tipAmount,
-    payments: paymentsOf.get(row.id) ?? [],
-    lines: [],
-  }));
+  const sessionIds = bills.map((row) => row.tableSessionId);
+  const lineRows = await db
+    .select({ line: schema.orderLine, unitCost: schema.menuItem.cost })
+    .from(schema.orderLine)
+    .leftJoin(schema.orderLineVoid, eq(schema.orderLineVoid.orderLineId, schema.orderLine.id))
+    .leftJoin(schema.menuItem, eq(schema.menuItem.id, schema.orderLine.menuItemId))
+    .where(
+      and(inArray(schema.orderLine.tableSessionId, sessionIds), isNull(schema.orderLineVoid.id)),
+    )
+    .orderBy(asc(schema.orderLine.recordedAt), asc(schema.orderLine.createdAt));
+  const discounts = await db
+    .select()
+    .from(schema.discount)
+    .where(inArray(schema.discount.tableSessionId, sessionIds))
+    .orderBy(asc(schema.discount.recordedAt), asc(schema.discount.createdAt));
+
+  return bills.map((row) => {
+    const rows = lineRows.filter((entry) => entry.line.tableSessionId === row.tableSessionId);
+    const computed = computeBill(
+      rows.map((entry) => entry.line),
+      discounts.filter((entry) => entry.tableSessionId === row.tableSessionId),
+    );
+    return {
+      id: row.id,
+      locationId: row.locationId,
+      settledByMemberId: row.settledByMemberId,
+      total: row.total ?? 0,
+      tip: row.tipAmount,
+      payments: paymentsOf.get(row.id) ?? [],
+      lines: rows.map((entry, index) => ({
+        menuItemId: entry.line.menuItemId,
+        itemName: entry.line.itemName,
+        quantity: entry.line.quantity,
+        revenue: computed.lines[index]!.total,
+        unitCost: entry.unitCost,
+      })),
+    };
+  });
 }

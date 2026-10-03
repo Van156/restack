@@ -3,6 +3,7 @@ import * as schema from "@base-template/db/schema";
 import { requireTestDatabaseOrSkip } from "@base-template/db/testing";
 import { call } from "@orpc/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 
 import { seedBillingScenario } from "../../testing/billing-fixtures";
 import { createRestaurantHarness } from "../../testing/restaurant-fixtures";
@@ -287,6 +288,243 @@ describe.skipIf(!reachable)("restaurant reports: daily by tender", () => {
         await scenario.codeOf(kitchen({ locationId: scenario.seed.locations.b }, "admin")),
       ).toBe("FORBIDDEN");
       expect(await scenario.codeOf(kitchen({}, "cashierA"))).toBe("FORBIDDEN");
+    });
+  });
+
+  describe("by Menu item and by Staff member, with cost and margin", () => {
+    const byItem = async (
+      input: { locationId?: string; date?: string } = {},
+      key: StaffKey = "owner",
+    ) => call(restaurantRouter.reports.byItem, input, { context: await scenario.as(key) });
+
+    const byStaff = async (
+      input: { locationId?: string; date?: string } = {},
+      key: StaffKey = "owner",
+    ) => call(restaurantRouter.reports.byStaff, input, { context: await scenario.as(key) });
+
+    const setCost = (item: "burger" | "beer" | "fries", cost: number | null) =>
+      harness.db
+        .update(schema.menuItem)
+        .set({ cost })
+        .where(eq(schema.menuItem.id, scenario.service.items[item]));
+
+    test("items carry quantity, recorded revenue, cost and margin; a missing cost is flagged, not zero", async () => {
+      await setCost("burger", 8_000);
+      await setCost("beer", 2_000);
+      await sell({ at: NOON });
+
+      const report = await byItem({ date: "2026-10-02" });
+      expect(report.items).toEqual([
+        {
+          menuItemId: scenario.service.items.burger,
+          itemName: "Hamburguesa",
+          quantity: 1,
+          revenue: 20_000,
+          cost: 8_000,
+          margin: 12_000,
+          costMissing: false,
+        },
+        {
+          menuItemId: scenario.service.items.fries,
+          itemName: "Papas",
+          quantity: 1,
+          revenue: 9_000,
+          cost: null,
+          margin: null,
+          costMissing: true,
+        },
+        {
+          menuItemId: scenario.service.items.beer,
+          itemName: "Cerveza",
+          quantity: 1,
+          revenue: 6_000,
+          cost: 2_000,
+          margin: 4_000,
+          costMissing: false,
+        },
+      ]);
+      expect(report.total).toEqual({
+        revenue: 35_000,
+        costedRevenue: 26_000,
+        uncostedRevenue: 9_000,
+        cost: 10_000,
+        margin: 16_000,
+        marginIncomplete: true,
+      });
+    });
+
+    test("revenue is the recorded price: a later menu price change does not move a past day", async () => {
+      await sell({ at: NOON });
+      await harness.db.update(schema.menuItem).set({ price: 99_999 });
+      const report = await byItem({ date: "2026-10-02" });
+      expect(report.total.revenue).toBe(35_000);
+    });
+
+    test("a Bill discount lowers the revenue of its lines in proportion and sums to the Bill total", async () => {
+      await setCost("burger", 8_000);
+      harness.clock.setNow(NOON);
+      const sessionId = await scenario.openSession();
+      const overrideId = await scenario.mintOverride("discount", sessionId);
+      await call(
+        restaurantRouter.orders.applyDiscount,
+        { tableSessionId: sessionId, kind: "percent", value: 10, overrideId },
+        { context: await scenario.as("cashierA") },
+      );
+      const cashier = await scenario.as("cashierA");
+      await call(
+        restaurantRouter.billing.recordPayment,
+        {
+          tableSessionId: sessionId,
+          tender: "cash",
+          amount: 31_500,
+          idempotencyKey: scenario.nextKey(),
+        },
+        { context: cashier },
+      );
+      await call(
+        restaurantRouter.billing.settle,
+        { tableSessionId: sessionId },
+        { context: cashier },
+      );
+
+      const report = await byItem({ date: "2026-10-02" });
+      const burger = report.items.find((item) => item.itemName === "Hamburguesa");
+      expect(burger).toMatchObject({ revenue: 18_000, cost: 8_000, margin: 10_000 });
+      expect(report.total.revenue).toBe(31_500);
+      expect((await daily({ date: "2026-10-02" })).salesTotal).toBe(31_500);
+    });
+
+    test("a removed line is not sold", async () => {
+      harness.clock.setNow(NOON);
+      const sessionId = await scenario.openSession({
+        lines: [{ item: "beer" }, { item: "fries" }],
+      });
+      const view = await call(
+        restaurantRouter.orders.getSession,
+        { tableSessionId: sessionId },
+        { context: await scenario.as("waiterA") },
+      );
+      const fries = view.lines.find((entry) => entry.itemName === "Papas")!;
+      await call(
+        restaurantRouter.orders.removeLine,
+        { lineId: fries.id, idempotencyKey: scenario.nextKey() },
+        { context: await scenario.as("waiterA") },
+      );
+      const cashier = await scenario.as("cashierA");
+      await call(
+        restaurantRouter.billing.recordPayment,
+        {
+          tableSessionId: sessionId,
+          tender: "cash",
+          amount: 6_000,
+          idempotencyKey: scenario.nextKey(),
+        },
+        { context: cashier },
+      );
+      await call(
+        restaurantRouter.billing.settle,
+        { tableSessionId: sessionId },
+        { context: cashier },
+      );
+
+      const report = await byItem({ date: "2026-10-02" });
+      expect(report.items.map((item) => item.itemName)).toEqual(["Cerveza"]);
+    });
+
+    test("a deleted Menu item stays in the report under its recorded name, flagged as missing cost", async () => {
+      await setCost("beer", 2_000);
+      await sell({ at: NOON, lines: [{ item: "beer" }] });
+      await harness.db
+        .delete(schema.menuItem)
+        .where(eq(schema.menuItem.id, scenario.service.items.beer));
+
+      const report = await byItem({ date: "2026-10-02" });
+      expect(report.items).toEqual([
+        {
+          menuItemId: null,
+          itemName: "Cerveza",
+          quantity: 1,
+          revenue: 6_000,
+          cost: null,
+          margin: null,
+          costMissing: true,
+        },
+      ]);
+    });
+
+    test("staff rows name who settled each Bill, with sales, tips and margin", async () => {
+      await setCost("beer", 2_000);
+      await sell({ at: NOON, lines: [{ item: "beer" }], tip: 600 });
+      await sell({
+        at: NOON,
+        lines: [{ item: "beer" }, { item: "beer" }],
+        chargedBy: "admin",
+      });
+
+      const report = await byStaff({ date: "2026-10-02" });
+      expect(report.staff).toEqual([
+        {
+          memberId: scenario.seed.staff.admin.memberId,
+          name: "admin",
+          billCount: 1,
+          salesTotal: 12_000,
+          tipTotal: 0,
+          margin: {
+            revenue: 12_000,
+            costedRevenue: 12_000,
+            uncostedRevenue: 0,
+            cost: 4_000,
+            margin: 8_000,
+            marginIncomplete: false,
+          },
+        },
+        {
+          memberId: scenario.seed.staff.cashierA.memberId,
+          name: "cashier-a",
+          billCount: 1,
+          salesTotal: 6_000,
+          tipTotal: 600,
+          margin: {
+            revenue: 6_000,
+            costedRevenue: 6_000,
+            uncostedRevenue: 0,
+            cost: 2_000,
+            margin: 4_000,
+            marginIncomplete: false,
+          },
+        },
+      ]);
+    });
+
+    test("Location filter, all-Locations view and Administrator scope apply to both reports", async () => {
+      await sell({ at: NOON, lines: [{ item: "beer" }] });
+      await sell({
+        at: NOON,
+        location: "b",
+        lines: [{ item: "fries" }],
+        payments: [{ tender: "card", amount: "rest" }],
+      });
+
+      expect((await byItem({ date: "2026-10-02" })).total.revenue).toBe(15_000);
+      expect(
+        (await byItem({ locationId: scenario.seed.locations.b, date: "2026-10-02" })).total.revenue,
+      ).toBe(9_000);
+      expect((await byStaff({ date: "2026-10-02" })).staff).toHaveLength(2);
+      expect((await byItem({ date: "2026-10-02" }, "admin")).total.revenue).toBe(6_000);
+      expect((await byStaff({ date: "2026-10-02" }, "admin")).staff).toHaveLength(1);
+      expect(
+        await scenario.codeOf(byItem({ locationId: scenario.seed.locations.b }, "admin")),
+      ).toBe("FORBIDDEN");
+      expect(
+        await scenario.codeOf(byStaff({ locationId: scenario.seed.locations.b }, "admin")),
+      ).toBe("FORBIDDEN");
+    });
+
+    test("Cashier and Waiter are denied both reports", async () => {
+      for (const key of ["cashierA", "waiterA"] as const) {
+        expect(await scenario.codeOf(byItem({}, key))).toBe("FORBIDDEN");
+        expect(await scenario.codeOf(byStaff({}, key))).toBe("FORBIDDEN");
+      }
     });
   });
 });

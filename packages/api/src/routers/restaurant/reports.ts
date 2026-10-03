@@ -12,7 +12,12 @@ import {
   resolveReportDay,
   resolveReportScope,
 } from "../../lib/sales-report-data";
-import { summarizeTenders } from "../../lib/sales-report";
+import {
+  summarizeByItem,
+  summarizeByStaff,
+  summarizeMargin,
+  summarizeTenders,
+} from "../../lib/sales-report";
 import { summarize } from "./kitchen-metrics";
 
 const reportInput = z.object({
@@ -99,6 +104,56 @@ export const reportsRouter = {
         locationId: location.id,
         name: location.name,
         ...summarize(tickets.filter((ticket) => ticket.locationId === location.id)),
+      })),
+    };
+  }),
+
+  /** Quantity, recorded revenue, cost and margin per Menu item; items without a cost are flagged. */
+  byItem: reportProcedure.input(reportInput).handler(async ({ context, input }) => {
+    const scope = await resolveReportScope(context, input.locationId);
+    const day = resolveReportDay(input.date, context.clock.now());
+    const bills = await loadSettledBills(context.db, {
+      organizationId: context.org.id,
+      locationIds: scope.locationIds,
+      bounds: day.bounds,
+    });
+    return {
+      date: day.date,
+      items: summarizeByItem(bills),
+      total: summarizeMargin(bills.flatMap((bill) => bill.lines)),
+    };
+  }),
+
+  /** Sales, tips and margin per Staff member who settled the Bills. */
+  byStaff: reportProcedure.input(reportInput).handler(async ({ context, input }) => {
+    const scope = await resolveReportScope(context, input.locationId);
+    const day = resolveReportDay(input.date, context.clock.now());
+    const bills = await loadSettledBills(context.db, {
+      organizationId: context.org.id,
+      locationIds: scope.locationIds,
+      bounds: day.bounds,
+    });
+    const summaries = summarizeByStaff(bills);
+    const memberIds = summaries.flatMap((row) => (row.memberId ? [row.memberId] : []));
+    const names =
+      memberIds.length === 0
+        ? []
+        : await context.db
+            .select({ memberId: schema.member.id, name: schema.user.name })
+            .from(schema.member)
+            .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+            .where(
+              and(
+                eq(schema.member.organizationId, context.org.id),
+                inArray(schema.member.id, memberIds),
+              ),
+            );
+    const nameOf = new Map(names.map((row) => [row.memberId, row.name]));
+    return {
+      date: day.date,
+      staff: summaries.map((row) => ({
+        ...row,
+        name: row.memberId ? (nameOf.get(row.memberId) ?? null) : null,
       })),
     };
   }),
