@@ -2,6 +2,7 @@ import { verifyPin } from "@base-template/auth/staff-credentials";
 import * as schema from "@base-template/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, eq, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 
 import type { Clock } from "../context";
 import type { DbExecutor } from "./executor";
@@ -42,25 +43,27 @@ export async function verifyMemberPin(
 
   if (await verifyPin(input.pin, row.pinHash)) {
     if (row.failedAttempts > 0 || row.lockedUntil) {
-      await db.update(schema.staffPin).set({ failedAttempts: 0, lockedUntil: null }).where(where);
+      await resetPinLockout(db, where);
     }
     return;
   }
 
-  // A lock that already ran out starts a fresh count.
-  if (row.lockedUntil) {
-    await db.update(schema.staffPin).set({ failedAttempts: 0, lockedUntil: null }).where(where);
-  }
-  const [updated] = await db
+  // One guarded UPDATE counts and locks, so concurrent wrong guesses cannot undercount.
+  const lockedUntil = new Date(now.getTime() + PIN_LOCKOUT_MINUTES * MINUTE_MS);
+  const lapsed = sql`(${schema.staffPin.lockedUntil} IS NOT NULL AND ${schema.staffPin.lockedUntil} <= ${now})`;
+  const count = sql`(CASE WHEN ${lapsed} THEN 1 ELSE ${schema.staffPin.failedAttempts} + 1 END)`;
+  await db
     .update(schema.staffPin)
-    .set({ failedAttempts: sql`${schema.staffPin.failedAttempts} + 1` })
-    .where(where)
-    .returning({ failedAttempts: schema.staffPin.failedAttempts });
-  if ((updated?.failedAttempts ?? 0) >= MAX_FAILED_PIN_ATTEMPTS) {
-    await db
-      .update(schema.staffPin)
-      .set({ lockedUntil: new Date(now.getTime() + PIN_LOCKOUT_MINUTES * MINUTE_MS) })
-      .where(where);
-  }
+    .set({
+      failedAttempts: count,
+      lockedUntil: sql`(CASE WHEN ${count} >= ${MAX_FAILED_PIN_ATTEMPTS} THEN ${lockedUntil}
+        WHEN ${lapsed} THEN NULL ELSE ${schema.staffPin.lockedUntil} END)`,
+    })
+    .where(where);
   throw new ORPCError("FORBIDDEN", { message: INCORRECT });
+}
+
+/** Clears the failed-attempt counter and any lockout. */
+export function resetPinLockout(db: DbExecutor, where: SQL | undefined) {
+  return db.update(schema.staffPin).set({ failedAttempts: 0, lockedUntil: null }).where(where);
 }

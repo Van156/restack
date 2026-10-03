@@ -335,6 +335,28 @@ describe.skipIf(!reachable)("restaurant staff: assignments, invitations and PINs
       expect(await attempt("4821")).toBeUndefined();
     });
 
+    test("parallel wrong PINs still lock at five, including right after a lockout expired", async () => {
+      await setPin("waiterA", "4821");
+      const wrong = async () =>
+        codeOf(
+          call(
+            restaurantRouter.staff.switchIn,
+            { locationId: seed.locations.a, memberId: seed.staff.waiterA.memberId, pin: "0000" },
+            { context: await as("cashierA") },
+          ),
+        );
+      await Promise.all(Array.from({ length: 5 }, wrong));
+      expect((await pinRow("waiterA"))!.failedAttempts).toBe(5);
+      expect((await pinRow("waiterA"))!.lockedUntil).not.toBeNull();
+
+      harness.clock.setNow(new Date(harness.clock.now().getTime() + 16 * MINUTE_MS));
+      await Promise.all(Array.from({ length: 5 }, wrong));
+      const row = await pinRow("waiterA");
+      expect(row!.failedAttempts).toBe(5);
+      expect(row!.lockedUntil).not.toBeNull();
+      expect(row!.lockedUntil!.getTime()).toBeGreaterThan(harness.clock.now().getTime());
+    });
+
     test("a correct PIN resets the failed attempt counter", async () => {
       await setPin("waiterA", "4821");
       const switchIn = async (pin: string) =>
