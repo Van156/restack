@@ -64,6 +64,7 @@ export const navGroups: NavGroup<NavContext>[] = [
           { label: "Configuración", to: "/restaurant/setup" },
           { label: "Equipo", to: "/restaurant/staff" },
           { label: "Dispositivos", to: "/restaurant/devices" },
+          { label: "Facturación", to: "/restaurant/dian" },
           { label: "Plan", to: "/restaurant/plan" },
           { label: "Mi PIN", to: "/restaurant/pin" },
         ],

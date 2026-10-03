@@ -86,4 +86,10 @@ export const APP_PRESENTATIONAL_COMPONENTS: readonly string[] = [
   "features/reports/components/staff-report-view.tsx",
   "features/reports/components/kitchen-report-view.tsx",
   "features/plan/components/plan-list-view.tsx",
+  "features/dian/components/dian-status-card.tsx",
+  "features/dian/components/habilitacion-wizard.tsx",
+  "features/dian/components/connection-form.tsx",
+  "features/dian/components/outbox-view.tsx",
+  "features/dian/components/incidents-view.tsx",
+  "features/dian/components/document-counts-view.tsx",
 ];
