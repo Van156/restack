@@ -3,6 +3,7 @@ import * as schema from "@base-template/db/schema";
 import { requireTestDatabaseOrSkip } from "@base-template/db/testing";
 import { call } from "@orpc/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 
 import { BILLING_TEST_TOTAL, seedBillingScenario } from "../../testing/billing-fixtures";
 import { createRestaurantHarness } from "../../testing/restaurant-fixtures";
@@ -46,9 +47,14 @@ describe.skipIf(!reachable)("restaurant cash shift: tip beneficiaries and distri
     await call(restaurantRouter.billing.settle, { tableSessionId }, { context });
   }
 
-  /** Opens a shift, makes one sale with `tip` and closes it with the exact count. */
-  async function closedShiftWithTip(tip: number) {
+  type BeneficiaryInput = { memberId?: string; displayName?: string; sharePercent?: number };
+
+  /** Opens a shift, optionally configures its beneficiaries, makes one sale with `tip` and closes it. */
+  async function closedShiftWithTip(tip: number, beneficiaries?: BeneficiaryInput[]) {
     const shift = await scenario.openShift(50_000);
+    if (beneficiaries) {
+      await setBeneficiaries(shift.id, beneficiaries);
+    }
     await sale(tip);
     await call(
       restaurantRouter.cashShift.close,
@@ -63,7 +69,7 @@ describe.skipIf(!reachable)("restaurant cash shift: tip beneficiaries and distri
 
   const setBeneficiaries = async (
     cashShiftId: string,
-    beneficiaries: { memberId?: string; displayName?: string; sharePercent?: number }[],
+    beneficiaries: BeneficiaryInput[],
     key: StaffKey = "admin",
   ) =>
     call(
@@ -178,10 +184,41 @@ describe.skipIf(!reachable)("restaurant cash shift: tip beneficiaries and distri
     });
   });
 
-  describe("distribution", () => {
-    test("splits the shift's tips equally, remainder pesos to the first beneficiaries, and audits it", async () => {
-      const shiftId = await closedShiftWithTip(10_000);
-      await setBeneficiaries(shiftId, [
+  describe("distribution at close", () => {
+    const distributionRows = async (cashShiftId: string) =>
+      (
+        await harness.db
+          .select()
+          .from(schema.tipDistribution)
+          .where(eq(schema.tipDistribution.cashShiftId, cashShiftId))
+      ).sort((a, b) => a.displayName.localeCompare(b.displayName));
+    const distributedEvents = async () =>
+      (await harness.db.select().from(schema.auditLog)).filter(
+        (row) => row.action === "tip.distributed",
+      );
+
+    /** A Staff member with the plain `member` Role (no charge permission) assigned to Location A. */
+    async function addPlainMember() {
+      const organizationId = scenario.seed.organizationId;
+      await harness.db.insert(schema.user).values({
+        id: "plain-user",
+        name: "plain",
+        email: "plain@example.com",
+        emailVerified: true,
+      });
+      await harness.db
+        .insert(schema.member)
+        .values({ id: "plain-member", organizationId, userId: "plain-user", role: "member" });
+      await harness.db.insert(schema.staffLocationAssignment).values({
+        organizationId,
+        memberId: "plain-member",
+        locationId: scenario.seed.locations.a,
+      });
+      return "plain-member";
+    }
+
+    test("closing splits the shift's tips equally, remainder pesos to the first beneficiaries, and audits it", async () => {
+      const shiftId = await closedShiftWithTip(10_000, [
         { memberId: member("waiterA") },
         { displayName: "Juan" },
         { displayName: "Marta" },
@@ -192,16 +229,13 @@ describe.skipIf(!reachable)("restaurant cash shift: tip beneficiaries and distri
         ["Juan", 3_333],
         ["Marta", 3_333],
       ]);
-      const events = (await harness.db.select().from(schema.auditLog)).filter(
-        (row) => row.action === "tip.distributed",
-      );
+      const events = await distributedEvents();
       expect(events).toHaveLength(1);
       expect(events[0]?.metadata).toMatchObject({ total: 10_000 });
     });
 
     test("splits by the agreed percentages", async () => {
-      const shiftId = await closedShiftWithTip(10_000);
-      await setBeneficiaries(shiftId, [
+      const shiftId = await closedShiftWithTip(10_000, [
         { displayName: "A", sharePercent: 50 },
         { displayName: "B", sharePercent: 30 },
         { displayName: "C", sharePercent: 20 },
@@ -209,43 +243,99 @@ describe.skipIf(!reachable)("restaurant cash shift: tip beneficiaries and distri
       expect((await distribute(shiftId)).map((row) => row.amount)).toEqual([5_000, 3_000, 2_000]);
     });
 
-    test("is idempotent: a second call returns the same rows and audits once", async () => {
-      const shiftId = await closedShiftWithTip(4_000);
-      await setBeneficiaries(shiftId, [{ displayName: "A" }, { displayName: "B" }]);
+    test("distributeTips is idempotent: it returns the close snapshot and audits once", async () => {
+      const shiftId = await closedShiftWithTip(4_000, [{ displayName: "A" }, { displayName: "B" }]);
       const first = await distribute(shiftId);
       const second = await distribute(shiftId);
       expect(second.map((row) => row.id)).toEqual(first.map((row) => row.id));
-      expect(
-        (await harness.db.select().from(schema.auditLog)).filter(
-          (row) => row.action === "tip.distributed",
-        ),
-      ).toHaveLength(1);
+      expect(await distributedEvents()).toHaveLength(1);
     });
 
     test("a shift without tips distributes zero amounts", async () => {
-      const shiftId = await closedShiftWithTip(0);
-      await setBeneficiaries(shiftId, [{ displayName: "A" }, { displayName: "B" }]);
+      const shiftId = await closedShiftWithTip(0, [{ displayName: "A" }, { displayName: "B" }]);
       expect((await distribute(shiftId)).map((row) => row.amount)).toEqual([0, 0]);
     });
 
-    test("needs a closed shift and configured beneficiaries", async () => {
+    test("a tip changed after the close does not touch the stored distribution", async () => {
+      const shiftId = await closedShiftWithTip(4_000, [{ displayName: "A" }]);
+      const [bill] = await harness.db.select().from(schema.bill);
+      await harness.db
+        .update(schema.bill)
+        .set({ tipAmount: 9_000 })
+        .where(eq(schema.bill.id, bill!.id));
+      expect((await distribute(shiftId)).map((row) => row.amount)).toEqual([4_000]);
+      expect((await distributionRows(shiftId)).map((row) => row.amount)).toEqual([4_000]);
+    });
+
+    test("without configured beneficiaries the default group shares the tips", async () => {
+      const plain = await addPlainMember();
+      const shiftId = await closedShiftWithTip(10_000);
+      // Waiter and plain member; the Cashier can charge and the Administrator is excluded.
+      const rows = await distributionRows(shiftId);
+      expect(rows.map((row) => [row.memberId, row.amount]).sort()).toEqual(
+        [
+          [member("waiterA"), 5_000],
+          [plain, 5_000],
+        ].sort(),
+      );
+      const beneficiaries = await call(
+        restaurantRouter.cashShift.tipBeneficiaries,
+        { cashShiftId: shiftId },
+        { context: await scenario.as("cashierA") },
+      );
+      expect(beneficiaries).toHaveLength(2);
+      expect(await distributedEvents()).toHaveLength(1);
+    });
+
+    test("an Owner or Administrator configured earlier is excluded at distribution", async () => {
+      const shift = await scenario.openShift();
+      await setBeneficiaries(shift.id, [
+        { memberId: member("waiterA"), sharePercent: 60 },
+        { displayName: "Juan", sharePercent: 20 },
+        { displayName: "Marta", sharePercent: 20 },
+      ]);
+      await harness.db
+        .update(schema.member)
+        .set({ role: "waiter,admin" })
+        .where(eq(schema.member.id, member("waiterA")));
+      await sale(10_000);
+      await call(
+        restaurantRouter.cashShift.close,
+        {
+          cashShiftId: shift.id,
+          counted: { cash: 50_000 + BILLING_TEST_TOTAL + 10_000, card: 0, qr_transfer: 0 },
+        },
+        { context: await scenario.as("cashierA") },
+      );
+      const rows = await distributionRows(shift.id);
+      expect(rows.map((row) => [row.displayName, row.amount])).toEqual([
+        ["Juan", 5_000],
+        ["Marta", 5_000],
+      ]);
+    });
+
+    test("with nobody eligible the close still works and tips wait for a configured list", async () => {
+      await harness.db
+        .update(schema.member)
+        .set({ role: "waiter,admin" })
+        .where(eq(schema.member.id, member("waiterA")));
+      const shiftId = await closedShiftWithTip(6_000);
+      expect(await distributionRows(shiftId)).toEqual([]);
+      expect(await distributedEvents()).toHaveLength(0);
+      expect(await scenario.codeOf(distribute(shiftId))).toBe("PRECONDITION_FAILED");
+      await setBeneficiaries(shiftId, [{ displayName: "A" }]);
+      expect((await distribute(shiftId)).map((row) => row.amount)).toEqual([6_000]);
+    });
+
+    test("distributeTips needs a closed shift and the Waiter may not call it", async () => {
       const shift = await scenario.openShift();
       await setBeneficiaries(shift.id, [{ displayName: "A" }]);
       expect(await scenario.codeOf(distribute(shift.id))).toBe("CONFLICT");
-      await call(
-        restaurantRouter.cashShift.close,
-        { cashShiftId: shift.id, counted: { cash: 50_000, card: 0, qr_transfer: 0 } },
-        { context: await scenario.as("cashierA") },
-      );
-      await harness.db.delete(schema.tipBeneficiary);
-      expect(await scenario.codeOf(distribute(shift.id))).toBe("PRECONDITION_FAILED");
+      expect(await scenario.codeOf(distribute(shift.id, "waiterA"))).toBe("FORBIDDEN");
     });
 
-    test("beneficiaries are frozen once distributed, and the Waiter may not distribute", async () => {
-      const shiftId = await closedShiftWithTip(2_000);
-      await setBeneficiaries(shiftId, [{ displayName: "A" }]);
-      expect(await scenario.codeOf(distribute(shiftId, "waiterA"))).toBe("FORBIDDEN");
-      await distribute(shiftId);
+    test("beneficiaries are frozen once the shift is distributed", async () => {
+      const shiftId = await closedShiftWithTip(2_000, [{ displayName: "A" }]);
       expect(await scenario.codeOf(setBeneficiaries(shiftId, [{ displayName: "B" }]))).toBe(
         "CONFLICT",
       );
@@ -261,12 +351,10 @@ describe.skipIf(!reachable)("restaurant cash shift: tip beneficiaries and distri
       );
 
     test("reports one shift per person", async () => {
-      const shiftId = await closedShiftWithTip(10_000);
-      await setBeneficiaries(shiftId, [
+      const shiftId = await closedShiftWithTip(10_000, [
         { displayName: "A", sharePercent: 70 },
         { displayName: "B", sharePercent: 30 },
       ]);
-      await distribute(shiftId);
       const result = await report({ cashShiftId: shiftId });
       expect(result.shifts).toHaveLength(1);
       expect(result.shifts[0]).toMatchObject({ cashShiftId: shiftId, tipTotal: 10_000 });
@@ -277,12 +365,8 @@ describe.skipIf(!reachable)("restaurant cash shift: tip beneficiaries and distri
     });
 
     test("a period sums each person across the shifts closed in those Bogota days", async () => {
-      const first = await closedShiftWithTip(10_000);
-      await setBeneficiaries(first, [{ memberId: member("waiterA") }, { displayName: "Juan" }]);
-      await distribute(first);
-      const second = await closedShiftWithTip(6_000);
-      await setBeneficiaries(second, [{ memberId: member("waiterA") }]);
-      await distribute(second);
+      await closedShiftWithTip(10_000, [{ memberId: member("waiterA") }, { displayName: "Juan" }]);
+      await closedShiftWithTip(6_000, [{ memberId: member("waiterA") }]);
 
       const today = await report({ from: "2026-10-02", to: "2026-10-02" });
       expect(today.shifts).toHaveLength(2);

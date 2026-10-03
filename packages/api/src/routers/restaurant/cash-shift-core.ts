@@ -9,6 +9,7 @@ import { recordAuditThrough } from "../../lib/audit-in-transaction";
 import { computeShiftLedger, findOpenShift } from "../../lib/cash-shift";
 import { assertLocationAccess } from "../../lib/location-scope";
 import { consumeOverride } from "../../lib/override";
+import { distributeShiftTips } from "../../lib/tip-distribution";
 import { loadShiftInScope } from "./cash-shift-shared";
 import { orConflict } from "./setup-helpers";
 
@@ -86,7 +87,8 @@ export const cashShiftCoreRouter = {
 
   /**
    * Closes a shift with the counted amounts per tender. Any tender off its expected amount needs an
-   * Override (`close_shift_difference`, target the shift id), spent in the same transaction.
+   * Override (`close_shift_difference`, target the shift id), spent in the same transaction. The
+   * shift's tip distribution is stored in that same transaction.
    */
   close: orgProcedure
     .use(manageShift)
@@ -166,6 +168,7 @@ export const cashShiftCoreRouter = {
             ...(hasDifference ? { overrideId: input.overrideId, approverMemberId } : {}),
           },
         });
+        await distributeShiftTips(tx, { shift: closed!, actorUserId: context.session.user.id });
         return closed!;
       });
     }),
