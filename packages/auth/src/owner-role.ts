@@ -1,7 +1,6 @@
-/** A member's `role` field can hold several comma-separated role names. */
+import { parseRoles } from "./role-names";
+
+/** Whether a member's `role` field includes the owner Role. */
 export function hasOwnerRole(role: string): boolean {
-  return role
-    .split(",")
-    .map((value) => value.trim())
-    .includes("owner");
+  return parseRoles(role).includes("owner");
 }

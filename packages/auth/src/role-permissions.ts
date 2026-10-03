@@ -4,6 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { isBuiltInOrgRole, orgRoles } from "./permissions";
 import type { PermissionsRecord } from "./permissions";
+import { parseRoles } from "./role-names";
 
 /** Merges `source`'s `feature: [actions]` entries into `target` (in place, deduped via `Set`). */
 function mergePermissionsInto(
@@ -27,10 +28,7 @@ export async function resolveOrgRolePermissions(
   organizationId: string,
   roleField: string,
 ): Promise<Record<string, string[]>> {
-  const roleNames = roleField
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
+  const roleNames = parseRoles(roleField);
 
   const permissions: Record<string, Set<string>> = {};
   for (const name of roleNames) {

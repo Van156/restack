@@ -1,3 +1,4 @@
+import { extractRequestMeta } from "@base-template/auth/audit";
 import {
   generatePairingCode,
   generateSecretToken,
@@ -20,11 +21,9 @@ const name = z.string().trim().min(1).max(80);
 const SOURCE_RULE = { limit: 20, windowMs: 15 * MINUTE_MS };
 const CODE_RULE = { limit: 5, windowMs: 15 * MINUTE_MS };
 
-/** First `x-forwarded-for` entry, else `x-real-ip`; shared bucket when neither is present. */
+/** Client IP for rate limiting; one shared bucket when no proxy header carries it. */
 function sourceOf(headers: Headers): string {
-  return (
-    headers.get("x-forwarded-for")?.split(",")[0]?.trim() || headers.get("x-real-ip") || "unknown"
-  );
+  return extractRequestMeta(headers).ip ?? "unknown";
 }
 const INVALID_CODE = "This pairing code is invalid or has expired.";
 
