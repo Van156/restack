@@ -6,6 +6,12 @@ import { z } from "zod";
 
 import { orgProcedure, requirePermission } from "../../index";
 import { assertLocationAccess } from "../../lib/location-scope";
+import {
+  MENU_CSV_COLUMNS,
+  menuCsvTemplate,
+  menuItemKey,
+  validateMenuCsv,
+} from "../../lib/menu-csv";
 import { loadMenuItems } from "./menu-queries";
 import { loadStationInScope } from "./stations";
 import { definedFields, orConflict } from "./setup-helpers";
@@ -408,5 +414,139 @@ export const menuRouter = {
           set: { soldOut: input.soldOut },
         });
       return { menuItemId: item.id, soldOut: input.soldOut };
+    }),
+
+  /** The import template: documented columns and the CSV text (header plus an example row). */
+  csvTemplate: orgProcedure.use(requirePermission({ setup: ["manage"] })).handler(() => ({
+    columns: MENU_CSV_COLUMNS,
+    csv: menuCsvTemplate(),
+  })),
+
+  /**
+   * Imports menu items from CSV. Every row is validated first; when any error exists nothing is
+   * written (even with `commit: true`). `commit: false` is a dry run. Categories are matched by
+   * name (case-insensitive) or created. The optional `station` column resolves against
+   * `locationId`, which the caller must be able to access.
+   */
+  importCsv: orgProcedure
+    .use(requirePermission({ setup: ["manage"] }))
+    .input(
+      z.object({
+        csv: z.string().max(1_000_000),
+        commit: z.boolean(),
+        locationId: z.string().min(1).optional(),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      if (input.locationId) {
+        await assertLocationAccess(context, input.locationId);
+      }
+      const [categories, items, stations] = await Promise.all([
+        context.db
+          .select()
+          .from(schema.menuCategory)
+          .where(eq(schema.menuCategory.organizationId, context.org.id)),
+        context.db
+          .select({ name: schema.menuItem.name, categoryId: schema.menuItem.categoryId })
+          .from(schema.menuItem)
+          .where(eq(schema.menuItem.organizationId, context.org.id)),
+        input.locationId
+          ? context.db
+              .select()
+              .from(schema.station)
+              .where(
+                and(
+                  eq(schema.station.locationId, input.locationId),
+                  eq(schema.station.organizationId, context.org.id),
+                ),
+              )
+          : Promise.resolve(null),
+      ]);
+      const categoryNameById = new Map(categories.map((row) => [row.id, row.name]));
+      const existingItemKeys = new Set(
+        items.map((row) => menuItemKey(categoryNameById.get(row.categoryId) ?? "", row.name)),
+      );
+      const validation = validateMenuCsv(input.csv, {
+        existingItemKeys,
+        stationsByName: stations
+          ? new Map(stations.map((row) => [row.name.toLowerCase(), row.id]))
+          : null,
+      });
+      const valid = validation.errors.length === 0;
+      const result = {
+        valid,
+        committed: false,
+        rowCount: validation.rows.length,
+        errors: validation.errors,
+        created: { categories: 0, items: 0, routings: 0 },
+      };
+      if (!valid || !input.commit) {
+        return result;
+      }
+
+      const created = await context.db.transaction(async (tx) => {
+        const categoryIds = new Map(categories.map((row) => [row.name.toLowerCase(), row.id]));
+        let nextOrder = Math.max(-1, ...categories.map((row) => row.sortOrder)) + 1;
+        let createdCategories = 0;
+        let createdRoutings = 0;
+        for (const row of validation.rows) {
+          const key = row.category.toLowerCase();
+          let categoryId = categoryIds.get(key);
+          if (!categoryId) {
+            const [category] = await orConflict(CATEGORY_TAKEN, () =>
+              tx
+                .insert(schema.menuCategory)
+                .values({
+                  organizationId: context.org.id,
+                  name: row.category,
+                  sortOrder: nextOrder,
+                })
+                .returning({ id: schema.menuCategory.id }),
+            );
+            categoryId = category!.id;
+            categoryIds.set(key, categoryId);
+            nextOrder += 1;
+            createdCategories += 1;
+          }
+          const [item] = await orConflict(ITEM_TAKEN, () =>
+            tx
+              .insert(schema.menuItem)
+              .values({
+                organizationId: context.org.id,
+                categoryId: categoryId!,
+                name: row.name,
+                price: row.price,
+                taxClass: row.taxClass,
+                cost: row.cost,
+              })
+              .returning({ id: schema.menuItem.id }),
+          );
+          if (row.stationId && input.locationId) {
+            await tx.insert(schema.stationRouting).values({
+              organizationId: context.org.id,
+              locationId: input.locationId,
+              menuItemId: item!.id,
+              stationId: row.stationId,
+            });
+            createdRoutings += 1;
+          }
+        }
+        return {
+          categories: createdCategories,
+          items: validation.rows.length,
+          routings: createdRoutings,
+        };
+      });
+
+      await context.auditLogger.record({
+        scope: "organization",
+        organizationId: context.org.id,
+        actorUserId: context.session.user.id,
+        action: "menu.imported",
+        targetType: "organization",
+        targetId: context.org.id,
+        metadata: { ...created, locationId: input.locationId ?? null },
+      });
+      return { ...result, committed: true, created };
     }),
 };
