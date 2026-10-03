@@ -17,13 +17,31 @@ describe("createInvoicingProvider", () => {
     );
   });
 
-  test("uses Alegra whenever credentials are present", () => {
-    expect(createInvoicingProvider({ NODE_ENV: "development", ...credentials })).toBeInstanceOf(
-      AlegraInvoicingProvider,
-    );
+  test("production uses Alegra whenever credentials are present", () => {
     expect(createInvoicingProvider({ NODE_ENV: "production", ...credentials })).toBeInstanceOf(
       AlegraInvoicingProvider,
     );
+  });
+
+  test("outside production credentials alone never select real Alegra", () => {
+    for (const NODE_ENV of ["development", "test"] as const) {
+      expect(createInvoicingProvider({ NODE_ENV, ...credentials })).toBeInstanceOf(
+        RecordingInvoicingProvider,
+      );
+      expect(
+        createInvoicingProvider({ NODE_ENV, INVOICING_PROVIDER: "fake", ...credentials }),
+      ).toBeInstanceOf(RecordingInvoicingProvider);
+    }
+  });
+
+  test("outside production INVOICING_PROVIDER=alegra opts in to real Alegra", () => {
+    expect(
+      createInvoicingProvider({
+        NODE_ENV: "development",
+        INVOICING_PROVIDER: "alegra",
+        ...credentials,
+      }),
+    ).toBeInstanceOf(AlegraInvoicingProvider);
   });
 
   test("production refuses the fake even when it is asked for explicitly", () => {

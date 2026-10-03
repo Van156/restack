@@ -40,8 +40,10 @@ class UnconfiguredInvoicingProvider implements InvoicingProvider {
 }
 
 /**
- * Alegra when credentials are set, the recording fake outside production otherwise. Production
- * refuses the fake and, without credentials, returns a provider that fails on every call.
+ * Production: Alegra when credentials are set. Elsewhere: the recording fake, and real Alegra only
+ * when `INVOICING_PROVIDER=alegra` is set, so stray credentials never reach the real DIAN from a
+ * dev or test run. Production refuses the fake and, without credentials, returns a provider that
+ * fails on every call.
  */
 export function createInvoicingProvider(env: InvoicingEnv): InvoicingProvider {
   const wantsFake = env.INVOICING_PROVIDER === "fake";
@@ -57,7 +59,8 @@ export function createInvoicingProvider(env: InvoicingEnv): InvoicingProvider {
       `createInvoicingProvider: ${hasEmail ? "ALEGRA_TOKEN" : "ALEGRA_EMAIL"} is required when the other Alegra credential is set.`,
     );
   }
-  if (hasEmail && !wantsFake) {
+  const realAllowed = env.NODE_ENV === "production" || env.INVOICING_PROVIDER === "alegra";
+  if (hasEmail && realAllowed) {
     return new AlegraInvoicingProvider({
       email: env.ALEGRA_EMAIL!,
       token: env.ALEGRA_TOKEN!,

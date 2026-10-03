@@ -81,7 +81,7 @@ Procedures: `packages/api/src/routers/restaurant/billing*.ts`; schema `packages/
 
 Port, fake, factory and Alegra adapter: `packages/api/src/lib/invoicing/`. The port issues a document from a Bill snapshot, looks one up by idempotency key or provider reference, and reads the habilitación status. A transient failure throws `InvoicingTransientError`; a rejection is a normal result carrying the provider's reason.
 
-- `createInvoicingProvider(env)` picks Alegra when `ALEGRA_EMAIL` and `ALEGRA_TOKEN` are set (both or neither) and the recording fake outside production otherwise. Production refuses `INVOICING_PROVIDER=fake` at startup. Production without credentials still starts but returns a provider whose every call throws `InvoicingNotConfiguredError`, so issuing is disabled with an explicit error and nothing is ever faked.
+- `createInvoicingProvider(env)` needs `ALEGRA_EMAIL` and `ALEGRA_TOKEN` together or not at all. In production Alegra is used when they are set. Outside production the recording fake is used unless `INVOICING_PROVIDER=alegra` is set explicitly, so credentials alone never reach the real DIAN from a dev or test run. Production refuses `INVOICING_PROVIDER=fake` at startup. Production without credentials still starts but returns a provider whose every call throws `InvoicingNotConfiguredError`, so issuing is disabled with an explicit error and nothing is ever faked.
 - The recording fake keeps every call, is deterministic (number `<prefix><n>`, reference `fake-<key>`), replays by key and can be scripted to reject, fail transiently or be unreachable.
 - Credentials are platform-level (env). The per-Location connection stores only the provider company reference, numbering prefix and habilitación status, never a token.
 
