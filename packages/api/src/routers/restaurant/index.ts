@@ -15,6 +15,7 @@ import { staffRouter } from "./staff";
 import { stationsRouter } from "./stations";
 import { syncRouter } from "./sync";
 import { tablesRouter } from "./tables";
+import { waiterCallRouter } from "./waiter-call";
 
 /**
  * Restaurant setup and operations. Every procedure takes the organization from the session and
@@ -38,4 +39,5 @@ export const restaurantRouter = {
   menu: menuRouter,
   setup: setupRouter,
   sync: syncRouter,
+  waiterCall: waiterCallRouter,
 };
