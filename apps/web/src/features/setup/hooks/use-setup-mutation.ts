@@ -13,7 +13,8 @@ export function useSetupMutation<TInput, TOutput>(
   const queryClient = useQueryClient();
   const { data: organization } = authClient.useActiveOrganization();
   return useMutation({
-    mutationFn,
+    // Wrapped so TanStack's mutation context never reaches the oRPC client as call options.
+    mutationFn: (input: TInput) => mutationFn(input),
     onSuccess: () => {
       if (successMessage) {
         toast.success(successMessage);
