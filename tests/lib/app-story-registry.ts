@@ -80,4 +80,9 @@ export const APP_PRESENTATIONAL_COMPONENTS: readonly string[] = [
   "features/cashier/components/tip-distribution-result.tsx",
   "features/cashier/components/tip-beneficiaries-form.tsx",
   "features/cashier/components/tip-report-view.tsx",
+  "features/reports/components/report-filters.tsx",
+  "features/reports/components/sales-report-view.tsx",
+  "features/reports/components/items-report-view.tsx",
+  "features/reports/components/staff-report-view.tsx",
+  "features/reports/components/kitchen-report-view.tsx",
 ];

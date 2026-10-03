@@ -30,6 +30,7 @@ describe("getSectionItems", () => {
       "Mesas",
       "Cocina",
       "Caja",
+      "Reportes",
       "Locales",
       "Configuración",
       "Equipo",

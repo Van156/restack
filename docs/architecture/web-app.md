@@ -161,6 +161,14 @@ Impersonate and stop-impersonating go through better-auth's own client (`authCli
 - **Errors.** `describeCheckoutError` maps the server's English refusals by prefix to Spanish copy.
 - **Actions.** Every action is a `CheckoutAction` run by `runCheckout` against the oRPC client with the acting token; `useCheckoutCommands` keeps the failure as copy for the screen.
 
+## Reports pages
+
+`/restaurant/reports` (`features/reports`, nav "Reportes") needs `report:read` (Owner and Administrator). The view (`?view=ventas|productos|equipo|cocina`), the business day (`?date=YYYY-MM-DD`, default today in Bogota) and the Location filter (`?location=<id>`, absent means every Location the caller may access) live in the URL; a bad value falls back to its default. The Location filter is hidden for a caller with one Location. Each view reads one `reports.*` procedure once per filter change (no polling) and is plain tables rather than the server-driven data table, because the answer is a small aggregate with no paging, sorting or filtering of its own.
+
+- **Ventas** (`reports.daily`): sales by tender, the tip on its own row apart from sales, the total collected, DIAN document counts by status and, with more than one Location, a row per Location.
+- **Productos** (`reports.byItem`) and **Equipo** (`reports.byStaff`): quantity or Bills, sales, tips, cost and margin (with the percent over the revenue that has a cost). An item without a cost shows "Sin costo" instead of a zero cost, and a margin that leaves such sales out is labelled "Incompleto". A Bill closed by nobody known reads "Sin asignar".
+- **Cocina** (`reports.kitchen`): Tickets sent that day, delivered ones, and average / worst time from sent to ready, preparation and pickup wait.
+
 ## Audit log pages
 
 The organization page uses `audit.list`, scoped server-side to `ctx.org.id`; no organization override is accepted, so the page can never be pointed at another tenant's log. Members back the actor filter (a picker instead of a raw id) and resolve actor ids to names; they are paginated past better-auth's 100-row page size and capped, with an `isIncomplete` flag surfaced in the page.
