@@ -1,10 +1,6 @@
 import { scryptAsync } from "@noble/hashes/scrypt.js";
 
-/**
- * Device side of the offline PIN contract: docs/architecture/restaurant.md#offline-pin. The server
- * seals a per-member key under the PIN; typing the right PIN here opens it, and records signed
- * with it prove the PIN was typed on a device that holds the material.
- */
+/** Device side of the offline PIN contract. See docs/architecture/restaurant.md#offline-pin. */
 
 /** One Staff member's material as `staff.offlineCredentials` returns it. Never holds the PIN. */
 export type OfflineMaterial = {
@@ -92,12 +88,7 @@ async function openSealed(
   }
 }
 
-/**
- * Switches a member in offline: scrypt of the PIN, then the sealed key opened under it. Null for a
- * wrong PIN (or material that does not belong to this Location and epoch). The PIN-derived key and
- * the raw offline key are wiped as soon as they are imported; only the signer keeps a
- * non-extractable HMAC key. scrypt costs 16 MiB and a few hundred milliseconds.
- */
+/** Switches a member in offline; null for a wrong PIN. See docs/architecture/restaurant.md#offline-pin. */
 export async function openOfflineSigner(
   material: OfflineMaterial,
   pin: string,
@@ -136,6 +127,7 @@ export async function openOfflineSigner(
       ["sign"],
     );
   } finally {
+    // Only the signer's non-extractable HMAC key outlives this call.
     pinKey.fill(0);
     offlineKey?.fill(0);
   }

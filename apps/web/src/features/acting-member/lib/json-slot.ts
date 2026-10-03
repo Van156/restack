@@ -1,10 +1,7 @@
 /** The part of `Storage` the device stores use; `window.localStorage` fits, tests pass a fake. */
 export type SlotStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-/**
- * One JSON value under one storage key. A missing, corrupt or foreign value reads as `undefined`,
- * and a full or unavailable storage only costs the saved copy.
- */
+/** One JSON value under one storage key; a bad value reads as `undefined`, a full storage costs the copy. */
 export function createJsonSlot<T>(
   storage: SlotStorage,
   key: string,

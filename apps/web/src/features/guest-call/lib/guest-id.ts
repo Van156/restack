@@ -21,10 +21,7 @@ export function browserRandomBytes(length: number): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(length));
 }
 
-/**
- * The id of this guest on this device: read from storage, or generated once and stored. Storage
- * can fail, so the id then lives only for this visit (the server falls back to another key).
- */
+/** The guest's id on this device, stored once; when storage fails it lives for this visit only. */
 export function loadOrCreateGuestId(
   storage: GuestStorage | null,
   randomBytes: (length: number) => Uint8Array = browserRandomBytes,

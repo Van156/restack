@@ -208,7 +208,7 @@ Spec story 123: a shared device switches Staff in with their PIN while offline, 
 
 ### Client implementation
 
-`apps/web/src/features/acting-member/lib` (`offline-pin-crypto.ts` is the contract steps 2 to 4; tested against a vector produced by `lib/offline-actor.ts`). The device stores the sealed material per organization and Location (`restack:offline-pin:<organizationId>:<locationId>`), refetches it on opening the waiter app, about daily and on `offline_actor_stale`, and throttles offline attempts per member: 5 wrong PINs lock that member on the device for 15 minutes, persisted. Details in [web-app.md](./web-app.md#waiter-pages).
+`apps/web/src/features/acting-member/lib` (`offline-pin-crypto.ts` is the contract steps 2 to 4; tested against a vector produced by `lib/offline-actor.ts`). The device stores the sealed material per organization and Location (`restack:offline-pin:<organizationId>:<locationId>`), refetches it on opening the waiter app, about daily and on `offline_actor_stale`, and throttles offline attempts per member: 5 wrong PINs lock that member on the device for 15 minutes, persisted in storage so a reload does not reset it (the server never sees the guesses). Someone who can clear that storage can also copy the sealed material and guess offline anyway, which is accepted. The PIN-derived key and the raw offline key are wiped as soon as the HMAC key is imported; scrypt costs 16 MiB and a few hundred milliseconds. Details in [web-app.md](./web-app.md#waiter-pages).
 
 ### What it does and does not give
 

@@ -32,12 +32,7 @@ function parseState(raw: unknown): State | undefined {
   return state;
 }
 
-/**
- * Limits offline PIN guesses per member on this device (the server never sees them). Five wrong
- * PINs lock that member for 15 minutes; a correct PIN clears the count. It lives in storage so a
- * reload does not reset it. Someone who can clear the storage can also copy the sealed material
- * and guess offline anyway, which restaurant.md#offline-pin accepts.
- */
+/** Per-member offline PIN throttle kept in storage. See docs/architecture/restaurant.md#offline-pin. */
 export function createPinThrottle(storage: SlotStorage, key: string) {
   const slot = createJsonSlot(storage, key, parseState);
   const load = (): State => slot.read() ?? {};
