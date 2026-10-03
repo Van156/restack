@@ -54,3 +54,13 @@ An Override lets a Staff member without the permission perform a guarded action 
 - `kitchen.list` shows unfinished Tickets always and delivered ones for the current business day only. It carries no prices.
 - Status moves one step at a time with a guarded `UPDATE ... WHERE status = <previous>`, so a double tap cannot skip a step; repeating the step just taken returns the Ticket.
 - `orders.listOpenSessions` flags each session with `hasReadyTicket` (a Ticket in `listo`) for the floor-plan marker.
+
+## Bill computation
+
+`computeBill` (`packages/db/src/lib/bill.ts`) prices a Bill from its billable lines (those without a void) at their recorded prices.
+
+- Discounts apply in recorded order. An amount takes `min(value, remaining)`; a percent is taken from what remains, rounded half up. The stack stops at zero, so the discount never exceeds the subtotal.
+- The discount is spread over the lines in proportion to each line's total (largest remainder, earlier lines first on ties), so line discounts add up to the discount exactly.
+- Tax is derived once per line from the discounted line total (`deriveTax`, half up). The tax base therefore shrinks with the discount, and `base + tax` equals the Bill total.
+- The Bill total is the sum of discounted line totals. The tip is outside the tax base and is added only to the amount to pay.
+- The suggested tip is the Location's percent of the Bill total, rounded half up. The tip itself is any whole-peso amount the customer chooses.
