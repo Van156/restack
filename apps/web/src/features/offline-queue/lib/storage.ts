@@ -34,12 +34,12 @@ export function createLocalStorageAdapter(
           return parsed as QueueSnapshot;
         }
       } catch {
-        // Falls through to the quarantine below.
+        // Unreadable: quarantined below.
       }
       try {
         web().setItem(`${key}.corrupt`, raw);
       } catch {
-        // Nothing more can be done for unreadable data.
+        // Quarantine is best effort.
       }
       return null;
     },

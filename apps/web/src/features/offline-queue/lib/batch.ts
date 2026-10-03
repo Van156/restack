@@ -1,4 +1,10 @@
-import { backoffDelayMs } from "./backoff";
+import {
+  holdForOverride,
+  holdForSession,
+  markRecordSynced,
+  reject,
+  scheduleRetry,
+} from "./transitions";
 import { TOKEN_MAX_AGE_MS } from "./types";
 import type { QueueError, QueueRecord, WireRecord, WireResult } from "./types";
 
@@ -98,14 +104,6 @@ export function toWire(record: QueueRecord, now: Date): WireRecord {
 
 export type SyncOutcome = "synced" | "failed" | "waiting" | "rejected";
 
-function fail(record: QueueRecord, error: QueueError, now: Date): "failed" {
-  record.attempts += 1;
-  record.status = "failed";
-  record.lastError = error;
-  record.nextAttemptAt = new Date(now.getTime() + backoffDelayMs(record.attempts)).toISOString();
-  return "failed";
-}
-
 /** Applies the server's answer for one record (or its absence) to the stored record. */
 export function applyResult(
   record: QueueRecord,
@@ -113,16 +111,12 @@ export function applyResult(
   now: Date,
 ): SyncOutcome {
   if (!result) {
-    return fail(record, { code: "NO_RESULT", message: "The server sent no result." }, now);
+    scheduleRetry(record, { code: "NO_RESULT", message: "The server sent no result." }, now);
+    return "failed";
   }
   if (result.status !== "rejected") {
-    record.status = "synced";
-    record.nextAttemptAt = null;
-    record.syncedAt = now.toISOString();
-    delete record.waitingOn;
-    delete record.lastError;
     const { entityId, note } = result;
-    record.result = { ...(entityId ? { entityId } : {}), ...(note ? { note } : {}) };
+    markRecordSynced(record, now, { ...(entityId ? { entityId } : {}), ...(note ? { note } : {}) });
     return "synced";
   }
 
@@ -136,36 +130,25 @@ export function applyResult(
   };
 
   if (reason === OVERRIDE_REQUIRED || reason === OVERRIDE_INVALID) {
-    record.attempts += 1;
-    record.status = "waiting";
-    record.waitingOn = "override";
-    record.lastError = error;
-    record.nextAttemptAt = null;
-    // A rejected Override is spent or unusable: the void waits for a fresh one.
+    holdForOverride(record, error);
+    // A spent or unusable Override cannot be reused: the void needs a fresh one.
     delete record.overrideId;
     return "waiting";
   }
   if (reason === SESSION_NOT_SYNCED) {
-    record.attempts += 1;
-    record.status = "waiting";
-    record.waitingOn = "session";
-    record.lastError = error;
-    record.nextAttemptAt = new Date(now.getTime() + backoffDelayMs(record.attempts)).toISOString();
+    holdForSession(record, error, now);
     return "waiting";
   }
   if (TRANSIENT_CODES.has(code)) {
-    return fail(record, error, now);
+    scheduleRetry(record, error, now);
+    return "failed";
   }
-  record.attempts += 1;
-  record.status = "rejected";
-  record.lastError = error;
-  record.nextAttemptAt = null;
-  delete record.waitingOn;
+  reject(record, error);
   return "rejected";
 }
 
 export function failBatch(records: QueueRecord[], error: QueueError, now: Date): void {
   for (const record of records) {
-    fail(record, error, now);
+    scheduleRetry(record, error, now);
   }
 }

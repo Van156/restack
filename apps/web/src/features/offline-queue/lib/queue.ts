@@ -1,8 +1,10 @@
-import { backoffDelayMs } from "./backoff";
 import { MAX_BATCH, applyResult, failBatch, selectDue, toWire } from "./batch";
 import type { SyncOutcome } from "./batch";
+import { documentOutbox } from "./document-outbox";
+import type { DocumentOutboxEntry } from "./document-outbox";
 import { deriveOfflineState } from "./offline-window";
 import type { OfflineState } from "./offline-window";
+import { makeDue, markRecordSynced, scheduleRetry } from "./transitions";
 import { QUEUE_KINDS } from "./types";
 import type {
   Clock,
@@ -45,16 +47,7 @@ export type OfflineQueueDeps = {
 
 export type SyncReport = { sent: number } & Record<SyncOutcome, number>;
 
-export type DocumentOutboxEntry = {
-  idempotencyKey: string;
-  /** The original sale time. */
-  saleTime: string;
-  contingency: boolean;
-  status: QueueRecord["status"];
-  attempts: number;
-  lastError?: QueueError;
-  nextAttemptAt: string | null;
-};
+export type { DocumentOutboxEntry };
 
 type State = { records: QueueRecord[]; incidents: OfflineIncident[] };
 
@@ -127,8 +120,17 @@ export async function openOfflineQueue(deps: OfflineQueueDeps) {
     return record;
   }
 
+  /** The record, which must not be synced yet: a synced record never moves again. */
+  function findUnsynced(draft: State, key: string): QueueRecord {
+    const record = find(draft, key);
+    if (record.status === "synced") {
+      throw new Error(`Record "${key}" is already synced.`);
+    }
+    return record;
+  }
+
   return {
-    /** Appends a record; a key already queued returns the stored record untouched. */
+    /** Idempotent: a key already queued returns the stored record. */
     async enqueue(input: EnqueueInput): Promise<QueueRecord> {
       const payload = prepare(input.kind, input.payload);
       const now = clock.now();
@@ -170,51 +172,20 @@ export async function openOfflineQueue(deps: OfflineQueueDeps) {
     },
 
     markSynced(key: string, result?: QueueRecord["result"]): Promise<void> {
-      const now = iso(clock.now());
-      return mutate((draft) => {
-        const record = find(draft, key);
-        record.status = "synced";
-        record.nextAttemptAt = null;
-        record.syncedAt = now;
-        delete record.waitingOn;
-        delete record.lastError;
-        if (result) {
-          record.result = result;
-        }
-      });
+      const now = clock.now();
+      return mutate((draft) => markRecordSynced(find(draft, key), now, result));
     },
 
-    /** Keeps the record and schedules its next attempt with backoff. */
     markFailed(key: string, error: QueueError): Promise<void> {
       const now = clock.now();
-      return mutate((draft) => {
-        const record = find(draft, key);
-        if (record.status === "synced") {
-          throw new Error(`Record "${key}" is already synced.`);
-        }
-        record.attempts += 1;
-        record.status = "failed";
-        record.lastError = error;
-        delete record.waitingOn;
-        record.nextAttemptAt = iso(new Date(now.getTime() + backoffDelayMs(record.attempts)));
-      });
+      return mutate((draft) => scheduleRetry(findUnsynced(draft, key), error, now));
     },
 
-    /** Makes a failed, waiting or rejected record due now. */
     retry(key: string): Promise<void> {
-      const now = iso(clock.now());
-      return mutate((draft) => {
-        const record = find(draft, key);
-        if (record.status === "synced") {
-          throw new Error(`Record "${key}" is already synced.`);
-        }
-        record.status = "pending";
-        delete record.waitingOn;
-        record.nextAttemptAt = now;
-      });
+      const now = clock.now();
+      return mutate((draft) => makeDue(findUnsynced(draft, key), now));
     },
 
-    /** Drops synced records; unsynced ones are never dropped. */
     purgeSynced(): Promise<number> {
       return mutate((draft) => {
         const before = draft.records.length;
@@ -242,7 +213,6 @@ export async function openOfflineQueue(deps: OfflineQueueDeps) {
       });
     },
 
-    /** The records `sync` would push now, in the shape `sync.push` receives. */
     selectBatch(): WireRecord[] {
       const now = clock.now();
       return selectDue(state.records, now, MAX_BATCH).map((record) => toWire(record, now));
@@ -294,32 +264,19 @@ export async function openOfflineQueue(deps: OfflineQueueDeps) {
 
     /** Gives a void that needs an Override the one obtained after reconnect, and makes it due. */
     attachOverride(key: string, overrideId: string): Promise<void> {
-      const now = iso(clock.now());
+      const now = clock.now();
       return mutate((draft) => {
         const record = find(draft, key);
         if (record.kind !== "void" || record.status === "synced") {
           throw new Error(`Record "${key}" cannot take an Override.`);
         }
         record.overrideId = overrideId;
-        record.status = "pending";
-        delete record.waitingOn;
-        record.nextAttemptAt = now;
+        makeDue(record, now);
       });
     },
 
-    /** Document requests not yet transmitted, oldest first. */
     documentOutbox(): DocumentOutboxEntry[] {
-      return state.records
-        .filter((r) => r.kind === "document_request" && r.status !== "synced")
-        .map((r) => ({
-          idempotencyKey: r.idempotencyKey,
-          saleTime: r.deviceRecordedAt,
-          contingency: r.payload.contingency !== false,
-          status: r.status,
-          attempts: r.attempts,
-          ...(r.lastError ? { lastError: structuredClone(r.lastError) } : {}),
-          nextAttemptAt: r.nextAttemptAt,
-        }));
+      return documentOutbox(state.records);
     },
 
     offlineState(): OfflineState {
