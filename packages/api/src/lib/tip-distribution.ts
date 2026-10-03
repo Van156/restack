@@ -25,9 +25,8 @@ const mayCharge = (name: string) =>
   ).billing?.includes("charge") === true;
 
 /**
- * Default tip group of a Location: assigned Staff who hold the Waiter Role, plus other Staff
- * (never the Owner or an Administrator) whose Roles carry no charge permission, such as kitchen
- * staff on the plain Member Role. Cashiers charge, so they are not in it unless they also wait.
+ * Default tip group of a Location: Waiters plus non-charging Staff, never the Owner or an
+ * Administrator. See docs/architecture/restaurant.md#tip-distribution.
  */
 export async function defaultTipGroup(
   db: DbExecutor,
@@ -74,8 +73,7 @@ function rescalePercents(percents: number[]): number[] {
 
 /**
  * The beneficiaries to pay out now: the configured list minus members who became Owner or
- * Administrator since (their rows are removed, and agreed percents keep their proportions), else
- * the default group, stored as the shift's list. Empty when nobody is eligible.
+ * Administrator, else the default group. See docs/architecture/restaurant.md#tip-distribution.
  */
 async function resolveBeneficiaries(
   tx: DbExecutor,
@@ -141,10 +139,8 @@ async function resolveBeneficiaries(
 }
 
 /**
- * Distributes a closed, locked shift's tips as a snapshot and audits `tip.distributed`. Done once:
- * a stored distribution is returned unchanged, so a tip edited later never rewrites it. Returns an
- * empty list (nothing stored, no audit) when nobody is eligible yet.
- * See docs/architecture/restaurant.md#tip-distribution.
+ * Distributes a closed, locked shift's tips once as a snapshot and audits `tip.distributed`;
+ * empty when nobody is eligible. See docs/architecture/restaurant.md#tip-distribution.
  */
 export async function distributeShiftTips(
   tx: DbExecutor,

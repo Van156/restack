@@ -40,10 +40,8 @@ class UnconfiguredInvoicingProvider implements InvoicingProvider {
 }
 
 /**
- * Production: Alegra when credentials are set. Elsewhere: the recording fake, and real Alegra only
- * when `INVOICING_PROVIDER=alegra` is set, so stray credentials never reach the real DIAN from a
- * dev or test run. Production refuses the fake and, without credentials, returns a provider that
- * fails on every call.
+ * Alegra in production when credentials are set; the recording fake elsewhere, and real Alegra
+ * only with `INVOICING_PROVIDER=alegra`. See docs/architecture/restaurant.md#invoicing.
  */
 export function createInvoicingProvider(env: InvoicingEnv): InvoicingProvider {
   const wantsFake = env.INVOICING_PROVIDER === "fake";
