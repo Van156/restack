@@ -3,6 +3,7 @@ import type { AuditLogger } from "@base-template/auth/audit";
 import type { Database } from "@base-template/db";
 
 import type { AuthorizationPort } from "./authorization";
+import type { RateLimiter } from "./lib/rate-limit";
 import type { PlatformAdminPort } from "./platform-admin";
 
 /** Injectable time source: the system clock in production, a controllable one in tests. */
@@ -28,4 +29,6 @@ export type Context = {
   clock: Clock;
   /** Server secret that signs acting tokens (HMAC); the composition root passes `BETTER_AUTH_SECRET`. */
   actingTokenSecret: string;
+  /** Attempt limiter for public procedures; when absent they are not throttled. */
+  rateLimiter?: RateLimiter;
 };

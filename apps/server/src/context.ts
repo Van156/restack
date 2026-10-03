@@ -1,9 +1,12 @@
 import { systemClock } from "@base-template/api/clock";
+import { createRateLimiter } from "@base-template/api/lib/rate-limit";
 import type { Context as ApiContext } from "@base-template/api/context";
 import type { Context as HonoContext } from "hono";
 
 import { ENV } from "./env.server";
 import { auditLogger, auth, authorization, db, platformAdmin } from "./services";
+
+const rateLimiter = createRateLimiter(systemClock);
 
 export type CreateContextOptions = {
   context: HonoContext;
@@ -22,6 +25,7 @@ export async function createContext({ context }: CreateContextOptions): Promise<
     defaultMaxOrganizationsPerUser: ENV.DEFAULT_MAX_ORGS_PER_USER,
     clock: systemClock,
     actingTokenSecret: ENV.BETTER_AUTH_SECRET,
+    rateLimiter,
   };
 }
 

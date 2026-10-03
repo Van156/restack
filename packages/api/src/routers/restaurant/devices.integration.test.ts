@@ -133,6 +133,23 @@ describe.skipIf(!reachable)("restaurant paired devices", () => {
     expect(await codeOf(redeem(expired.code))).toBe("NOT_FOUND");
   });
 
+  test("redeeming is throttled per code and per source, and recovers with the clock", async () => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect(await codeOf(redeem("ZZZZZZZZ"))).toBe("NOT_FOUND");
+    }
+    expect(await codeOf(redeem("ZZZZZZZZ"))).toBe("TOO_MANY_REQUESTS");
+
+    const pairing = await createPairing();
+    for (let attempt = 0; attempt < 15; attempt += 1) {
+      await codeOf(redeem(`CODE${attempt}`));
+    }
+    expect(await codeOf(redeem(pairing.code))).toBe("TOO_MANY_REQUESTS");
+
+    harness.clock.setNow(new Date(harness.clock.now().getTime() + 16 * MINUTE_MS));
+    const fresh = await createPairing();
+    expect((await redeem(fresh.code)).deviceToken.length).toBeGreaterThan(20);
+  });
+
   test("a device token resolves to its Location and Stations until revoked", async () => {
     const pairing = await createPairing();
     const { deviceToken } = await redeem(pairing.code);

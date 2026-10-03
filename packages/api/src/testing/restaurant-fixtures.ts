@@ -14,6 +14,7 @@ import type { TestHelpers } from "better-auth/plugins";
 
 import { createBetterAuthAuthorization } from "../authorization";
 import type { Clock, Context } from "../context";
+import { createRateLimiter } from "../lib/rate-limit";
 import { createBetterAuthPlatformAdmin } from "../platform-admin";
 
 /** Secret the harness gives the API context for signing acting tokens (same as the auth secret). */
@@ -75,6 +76,8 @@ export async function createRestaurantHarness(): Promise<RestaurantHarness> {
     },
   };
 
+  const rateLimiter = createRateLimiter(clock);
+
   async function createOrganization(id: string) {
     await handle.db.insert(schema.organization).values({ id, name: id, slug: id });
   }
@@ -113,6 +116,7 @@ export async function createRestaurantHarness(): Promise<RestaurantHarness> {
     async reset() {
       await truncateAllTables(handle.db);
       auditLogger.reset();
+      rateLimiter.reset();
     },
     async seedRestaurant() {
       const organizationId = "resto";
@@ -153,6 +157,7 @@ export async function createRestaurantHarness(): Promise<RestaurantHarness> {
         defaultMaxOrganizationsPerUser: AUTH_CONFIG.DEFAULT_MAX_ORGS_PER_USER,
         clock,
         actingTokenSecret: TEST_ACTING_TOKEN_SECRET,
+        rateLimiter,
       };
     },
     close: () => handle.close(),

@@ -16,6 +16,16 @@ const MINUTE_MS = 60 * 1000;
 /** How long a pairing code can be redeemed. */
 const PAIRING_CODE_TTL_MINUTES = 15;
 const name = z.string().trim().min(1).max(80);
+/** Guessing limits for the public redeem: attempts per source and per code in the window. */
+const SOURCE_RULE = { limit: 20, windowMs: 15 * MINUTE_MS };
+const CODE_RULE = { limit: 5, windowMs: 15 * MINUTE_MS };
+
+/** First `x-forwarded-for` entry, else `x-real-ip`; shared bucket when neither is present. */
+function sourceOf(headers: Headers): string {
+  return (
+    headers.get("x-forwarded-for")?.split(",")[0]?.trim() || headers.get("x-real-ip") || "unknown"
+  );
+}
 const INVALID_CODE = "This pairing code is invalid or has expired.";
 
 /** A device of the caller's organization, with the caller's access to its Location checked. */
@@ -100,6 +110,19 @@ export const devicesRouter = {
   redeem: publicProcedure
     .input(z.object({ code: z.string().trim().min(1).max(32) }))
     .handler(async ({ context, input }) => {
+      const code = input.code.toUpperCase();
+      const allowed =
+        !context.rateLimiter ||
+        (context.rateLimiter.hit(
+          `device-redeem:source:${sourceOf(context.headers)}`,
+          SOURCE_RULE,
+        ) &&
+          context.rateLimiter.hit(`device-redeem:code:${hashSecret(code)}`, CODE_RULE));
+      if (!allowed) {
+        throw new ORPCError("TOO_MANY_REQUESTS", {
+          message: "Too many attempts. Try again later.",
+        });
+      }
       const now = context.clock.now();
       const token = generateSecretToken();
       const [device] = await context.db
@@ -113,7 +136,7 @@ export const devicesRouter = {
         })
         .where(
           and(
-            eq(schema.pairedDevice.activationCodeHash, hashSecret(input.code.toUpperCase())),
+            eq(schema.pairedDevice.activationCodeHash, hashSecret(code)),
             eq(schema.pairedDevice.status, "pending"),
             gt(schema.pairedDevice.activationExpiresAt, now),
           ),
