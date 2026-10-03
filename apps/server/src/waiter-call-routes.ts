@@ -4,7 +4,11 @@ import type { Clock } from "@base-template/api/context";
 import type { DbExecutor } from "@base-template/api/lib/executor";
 import type { RateLimitRule, RateLimiter } from "@base-template/api/lib/rate-limit";
 import { verifyTableSessionToken } from "@base-template/api/lib/table-session-token";
-import { createGuestCall, getGuestState } from "@base-template/api/lib/waiter-call-guest";
+import {
+  EXPIRED_MESSAGE,
+  createGuestCall,
+  getGuestState,
+} from "@base-template/api/lib/waiter-call-guest";
 import { extractRequestMeta } from "@base-template/auth/audit";
 import { WAITER_CALL_REASONS } from "@base-template/db/schema/restaurant-waiter-call";
 import { Hono } from "hono";
@@ -19,10 +23,7 @@ export type WaiterCallRouteDeps = {
 };
 
 const MINUTE_MS = 60 * 1000;
-/**
- * Limits per fixed window. Sources are generous because a whole restaurant shares one address
- * and a guest page polls about once a second. See docs/architecture/restaurant.md#waiter-call.
- */
+/** Per fixed window; sources are generous (shared restaurant address, ~1 s polling). */
 const LIMITS = {
   readPerSource: { limit: 600, windowMs: MINUTE_MS },
   readPerToken: { limit: 120, windowMs: MINUTE_MS },
@@ -37,12 +38,19 @@ function sourceOf(headers: Headers): string {
   return extractRequestMeta(headers).ip ?? "unknown";
 }
 
-/** Opaque, one-way identifier of the guest's source; the address itself is never stored. */
+const GUEST_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
+
+/**
+ * Opaque, one-way key of one guest: the random id the page keeps (`x-guest-id`), else source and
+ * user agent. The address and the id themselves are never stored.
+ */
 function fingerprintOf(headers: Headers): string {
-  return createHash("sha256")
-    .update(`${sourceOf(headers)}|${headers.get("user-agent") ?? ""}`)
-    .digest("hex")
-    .slice(0, 32);
+  const guestId = headers.get("x-guest-id");
+  const basis =
+    guestId && GUEST_ID_PATTERN.test(guestId)
+      ? `guest:${guestId}`
+      : `source:${sourceOf(headers)}|${headers.get("user-agent") ?? ""}`;
+  return createHash("sha256").update(basis).digest("hex").slice(0, 32);
 }
 
 const tokenKey = (token: string) => createHash("sha256").update(token).digest("hex");
@@ -59,11 +67,12 @@ export function createWaiterCallRoutes(deps: WaiterCallRouteDeps) {
     c.header("Retry-After", "60");
     return c.json({ status: "throttled" }, 429);
   };
-  /** Signature and expiry only, no database: throttling a token needs it to be a real one. */
+  /** Signed and in time, no database: only a real token gets a token bucket. */
   const isGenuine = (token: string) =>
-    token.length <= MAX_TOKEN_LENGTH &&
     verifyTableSessionToken(deps.secret, token, deps.clock.now()).ok;
   const invalid = (c: Context) => c.json({ status: "invalid" }, 404);
+  const expired = (c: Context) => c.json({ status: "expired", message: EXPIRED_MESSAGE }, 410);
+  const tooLong = (token: string) => token.length > MAX_TOKEN_LENGTH;
 
   routes.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
@@ -76,14 +85,18 @@ export function createWaiterCallRoutes(deps: WaiterCallRouteDeps) {
     if (!deps.rateLimiter.hit(`waiter-call:read:source:${source}`, LIMITS.readPerSource)) {
       return throttled(c);
     }
-    if (!isGenuine(token)) {
+    if (tooLong(token)) {
       return invalid(c);
     }
-    if (!deps.rateLimiter.hit(`waiter-call:read:token:${tokenKey(token)}`, LIMITS.readPerToken)) {
+    const readKey = `waiter-call:read:token:${tokenKey(token)}`;
+    if (isGenuine(token) && !deps.rateLimiter.hit(readKey, LIMITS.readPerToken)) {
       return throttled(c);
     }
-    const result = await getGuestState(guestDeps, token);
-    return result.kind === "invalid" ? invalid(c) : c.json(result.state);
+    const result = await getGuestState(guestDeps, token, fingerprintOf(c.req.raw.headers));
+    if (result.kind === "invalid") {
+      return invalid(c);
+    }
+    return result.kind === "expired" ? expired(c) : c.json(result.state);
   });
 
   routes.post("/:token", async (c) => {
@@ -94,10 +107,11 @@ export function createWaiterCallRoutes(deps: WaiterCallRouteDeps) {
     ) {
       return throttled(c);
     }
-    if (!isGenuine(token)) {
+    if (tooLong(token)) {
       return invalid(c);
     }
-    if (!deps.rateLimiter.hit(`waiter-call:call:token:${tokenKey(token)}`, LIMITS.callPerToken)) {
+    const callKey = `waiter-call:call:token:${tokenKey(token)}`;
+    if (isGenuine(token) && !deps.rateLimiter.hit(callKey, LIMITS.callPerToken)) {
       return throttled(c);
     }
     const body = bodySchema.safeParse(await c.req.json().catch(() => null));
@@ -110,6 +124,9 @@ export function createWaiterCallRoutes(deps: WaiterCallRouteDeps) {
     });
     if (result.kind === "invalid") {
       return invalid(c);
+    }
+    if (result.kind === "expired") {
+      return expired(c);
     }
     if (result.kind === "created") {
       return c.json(result.state, 201);

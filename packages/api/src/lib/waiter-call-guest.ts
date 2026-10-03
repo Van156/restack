@@ -9,6 +9,7 @@ import type { Clock } from "../context";
 import type { DbExecutor } from "./executor";
 import { isLocationOnline } from "./location-presence";
 import { verifyTableSessionToken } from "./table-session-token";
+import type { TableSessionTokenClaims } from "./table-session-token";
 
 /** Pause after a call is attended before the same Table session can call again. */
 export const WAITER_CALL_COOLDOWN_MS = 30 * 1000;
@@ -20,6 +21,7 @@ export const GUEST_REASONS: readonly { id: WaiterCallReason; label: string }[] =
   { id: "pay", label: "Quiero pagar" },
 ];
 
+export const EXPIRED_MESSAGE = "Este código QR venció. Escanea el código actual de tu mesa.";
 export const CLOSED_MESSAGE = "Esta mesa ya cerró. Gracias por venir.";
 export const OFFLINE_MESSAGE = "El restaurante está sin conexión. Llama a tu mesero con la mano.";
 
@@ -38,25 +40,26 @@ export type GuestState =
       canCall: boolean;
     };
 
-export type GuestStateResult = { kind: "invalid" } | { kind: "state"; state: GuestState };
+export type GuestStateResult =
+  | { kind: "invalid" }
+  | { kind: "expired" }
+  | { kind: "state"; state: GuestState };
 
 export type GuestCallResult =
   | { kind: "invalid" }
+  | { kind: "expired" }
   | { kind: "refused"; reason: "closed" | "offline" | "call_open"; state: GuestState }
   | { kind: "refused"; reason: "cooldown"; state: GuestState; retryAfterSeconds: number }
   | { kind: "created"; state: GuestState };
 
-/**
- * The session a token stands for, or null: signed, unexpired, still the current QR version, and
- * matching the stored session, so a forged or stale token is indistinguishable from a missing one.
- */
-async function sessionOfToken(deps: GuestDeps, token: string) {
-  const verdict = verifyTableSessionToken(deps.secret, token, deps.clock.now());
-  if (!verdict.ok) {
-    return null;
-  }
-  const { claims } = verdict;
-  const [row] = await deps.db
+type SessionRow = NonNullable<Awaited<ReturnType<typeof findSession>>>;
+type TokenSession =
+  | { kind: "invalid" }
+  | { kind: "expired" }
+  | { kind: "session"; row: SessionRow };
+
+function findSession(deps: GuestDeps, claims: TableSessionTokenClaims) {
+  return deps.db
     .select({ session: schema.tableSession, tableName: schema.diningTable.name })
     .from(schema.tableSession)
     .innerJoin(schema.diningTable, eq(schema.diningTable.id, schema.tableSession.tableId))
@@ -67,14 +70,31 @@ async function sessionOfToken(deps: GuestDeps, token: string) {
         eq(schema.tableSession.locationId, claims.locationId),
         eq(schema.tableSession.tokenVersion, claims.version),
       ),
-    );
-  return row ?? null;
+    )
+    .then(([row]) => row ?? null);
 }
 
-async function stateOf(
-  deps: GuestDeps,
-  row: NonNullable<Awaited<ReturnType<typeof sessionOfToken>>>,
-): Promise<GuestState> {
+/**
+ * The session a token stands for: signed, unexpired, still the current QR version and matching
+ * the stored session. A signed token past its expiry on a still-open session is `expired`; every
+ * other failure is `invalid`, indistinguishable from a missing session.
+ */
+async function resolveToken(deps: GuestDeps, token: string): Promise<TokenSession> {
+  const verdict = verifyTableSessionToken(deps.secret, token, deps.clock.now());
+  if (!verdict.ok && verdict.reason === "malformed") {
+    return { kind: "invalid" };
+  }
+  const row = await findSession(deps, verdict.claims);
+  if (!row) {
+    return { kind: "invalid" };
+  }
+  if (verdict.ok) {
+    return { kind: "session", row };
+  }
+  return row.session.status === "settled" ? { kind: "invalid" } : { kind: "expired" };
+}
+
+async function stateOf(deps: GuestDeps, row: SessionRow, fingerprint: string): Promise<GuestState> {
   const { session, tableName } = row;
   if (session.status === "settled") {
     return { status: "closed", message: CLOSED_MESSAGE };
@@ -85,7 +105,12 @@ async function stateOf(
   const [latest] = await deps.db
     .select()
     .from(schema.waiterCall)
-    .where(eq(schema.waiterCall.tableSessionId, session.id))
+    .where(
+      and(
+        eq(schema.waiterCall.tableSessionId, session.id),
+        eq(schema.waiterCall.guestFingerprint, fingerprint),
+      ),
+    )
     .orderBy(desc(schema.waiterCall.createdAt))
     .limit(1);
   const unfinished = latest && latest.status !== "attended" ? latest : null;
@@ -106,25 +131,33 @@ async function stateOf(
 }
 
 /** The guest page state for a token. See docs/architecture/restaurant.md#waiter-call. */
-export async function getGuestState(deps: GuestDeps, token: string): Promise<GuestStateResult> {
-  const row = await sessionOfToken(deps, token);
-  return row ? { kind: "state", state: await stateOf(deps, row) } : { kind: "invalid" };
+export async function getGuestState(
+  deps: GuestDeps,
+  token: string,
+  fingerprint: string,
+): Promise<GuestStateResult> {
+  const resolved = await resolveToken(deps, token);
+  return resolved.kind === "session"
+    ? { kind: "state", state: await stateOf(deps, resolved.row, fingerprint) }
+    : resolved;
 }
 
 /**
  * Creates the guest's call unless the Table closed, the Location is offline, a call is already
- * open or the cooldown runs. The partial unique index decides a race between two guests.
+ * open for this guest or their cooldown runs. The partial unique index decides a race between two
+ * taps of the same guest.
  */
 export async function createGuestCall(
   deps: GuestDeps,
   token: string,
   input: { reason: WaiterCallReason; fingerprint: string },
 ): Promise<GuestCallResult> {
-  const row = await sessionOfToken(deps, token);
-  if (!row) {
-    return { kind: "invalid" };
+  const resolved = await resolveToken(deps, token);
+  if (resolved.kind !== "session") {
+    return resolved;
   }
-  const before = await stateOf(deps, row);
+  const { row } = resolved;
+  const before = await stateOf(deps, row, input.fingerprint);
   if (before.status !== "open") {
     return { kind: "refused", reason: before.status, state: before };
   }
@@ -153,7 +186,7 @@ export async function createGuestCall(
     })
     .onConflictDoNothing()
     .returning({ id: schema.waiterCall.id });
-  const after = await stateOf(deps, row);
+  const after = await stateOf(deps, row, input.fingerprint);
   return created
     ? { kind: "created", state: after }
     : { kind: "refused", reason: "call_open", state: after };

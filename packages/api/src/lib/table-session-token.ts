@@ -17,7 +17,8 @@ export type TableSessionTokenClaims = {
 
 export type TableSessionTokenVerdict =
   | { ok: true; claims: TableSessionTokenClaims & { expiresAt: Date } }
-  | { ok: false; reason: "malformed" | "expired" };
+  | { ok: false; reason: "malformed" }
+  | { ok: false; reason: "expired"; claims: TableSessionTokenClaims };
 
 function sign(secret: string, payload: string): string {
   return createHmac("sha256", secret).update(SIGNING_CONTEXT).update(payload).digest("base64url");
@@ -76,19 +77,16 @@ export function verifyTableSessionToken(
     ) {
       return malformed;
     }
-    if (data.e <= now.getTime()) {
-      return { ok: false, reason: "expired" };
-    }
-    return {
-      ok: true,
-      claims: {
-        organizationId: data.o,
-        locationId: data.l,
-        tableSessionId: data.s,
-        version: data.v,
-        expiresAt: new Date(data.e),
-      },
+    const claims = {
+      organizationId: data.o,
+      locationId: data.l,
+      tableSessionId: data.s,
+      version: data.v,
     };
+    if (data.e <= now.getTime()) {
+      return { ok: false, reason: "expired", claims };
+    }
+    return { ok: true, claims: { ...claims, expiresAt: new Date(data.e) } };
   } catch {
     return malformed;
   }

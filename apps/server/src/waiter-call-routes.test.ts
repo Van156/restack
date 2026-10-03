@@ -75,14 +75,24 @@ describe.skipIf(!reachable)("public Waiter call", () => {
     });
   }
 
-  const get = (value = token, source = "203.0.113.7") =>
-    routes.request(`/${value}`, { headers: { "x-forwarded-for": source } });
-  const post = (reason: unknown, value = token, source = "203.0.113.7") =>
+  const guestHeader = (guest?: string): Record<string, string> =>
+    guest ? { "x-guest-id": guest } : {};
+  const get = (value = token, source = "203.0.113.7", guest?: string) =>
+    routes.request(`/${value}`, {
+      headers: { "x-forwarded-for": source, ...guestHeader(guest) },
+    });
+  const post = (reason: unknown, value = token, source = "203.0.113.7", guest?: string) =>
     routes.request(`/${value}`, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-forwarded-for": source },
+      headers: {
+        "content-type": "application/json",
+        "x-forwarded-for": source,
+        ...guestHeader(guest),
+      },
       body: JSON.stringify({ reason }),
     });
+  const ANA = "guest-ana-0123456789abcdef";
+  const BEN = "guest-ben-0123456789abcdef";
   const probe = () => waiterCallProbe(harness, sessionId);
   const calls = () => probe().calls();
 
@@ -119,7 +129,7 @@ describe.skipIf(!reachable)("public Waiter call", () => {
       expect(await (await get()).json()).toMatchObject({ call: { reason: "pay" }, canCall: false });
     });
 
-    test("only one call stays open per Table session", async () => {
+    test("the same guest gets one open call per Table session", async () => {
       expect((await post("pay")).status).toBe(201);
       const second = await post("need_something");
       expect(second.status).toBe(409);
@@ -181,12 +191,45 @@ describe.skipIf(!reachable)("public Waiter call", () => {
   });
 
   describe("expired token", () => {
-    test("is refused for the state and for a call", async () => {
+    const expire = async () => {
       later(TABLE_SESSION_TOKEN_TTL_HOURS * HOUR_MS + SECOND_MS);
       await staffAtTheRestaurant();
-      expect((await get()).status).toBe(404);
-      expect((await post("pay")).status).toBe(404);
+    };
+
+    test("on an open session the guest is told to scan the current QR, for the state and for a call", async () => {
+      await expire();
+      for (const response of [await get(), await post("pay")]) {
+        expect(response.status).toBe(410);
+        expect(await response.json()).toEqual({
+          status: "expired",
+          message: "Este código QR venció. Escanea el código actual de tu mesa.",
+        });
+      }
       expect(await calls()).toHaveLength(0);
+    });
+
+    test("on a settled session or after a regenerated QR it stays the generic invalid", async () => {
+      await expire();
+      await probe().settleSession();
+      expect((await get()).status).toBe(404);
+      expect(await (await get()).json()).toEqual({ status: "invalid" });
+    });
+
+    test("a regenerated QR makes an expired old token invalid, not expired", async () => {
+      const waiter = await harness.contextFor(seed.staff.waiterA.userId, seed.organizationId);
+      await call(
+        restaurantRouter.waiterCall.regenerateQr,
+        { tableSessionId: sessionId },
+        { context: waiter },
+      );
+      await expire();
+      expect(await (await get()).json()).toEqual({ status: "invalid" });
+    });
+
+    test("a forged expired-looking token stays invalid", async () => {
+      const [payload] = token.split(".") as [string];
+      const response = await get(`${payload}.AAAA`);
+      expect(response.status).toBe(404);
     });
   });
 
@@ -265,6 +308,53 @@ describe.skipIf(!reachable)("public Waiter call", () => {
       await staffAtTheRestaurant();
       expect(await (await get()).json()).toMatchObject({ canCall: true });
       expect((await post("need_something")).status).toBe(201);
+    });
+  });
+
+  describe("per guest", () => {
+    test("two guests at one Table each get their own call", async () => {
+      expect((await post("pay", token, "203.0.113.7", ANA)).status).toBe(201);
+      expect((await post("need_something", token, "203.0.113.7", BEN)).status).toBe(201);
+      expect(await calls()).toHaveLength(2);
+    });
+
+    test("the same guest asking again gets call_open", async () => {
+      await post("pay", token, "203.0.113.7", ANA);
+      const again = await post("pay", token, "198.51.100.4", ANA);
+      expect(again.status).toBe(409);
+      expect(await again.json()).toMatchObject({ status: "call_open" });
+      expect(await calls()).toHaveLength(1);
+    });
+
+    test("a guest sees only their own call", async () => {
+      await post("pay", token, "203.0.113.7", ANA);
+      expect(await (await get(token, "203.0.113.7", BEN)).json()).toMatchObject({
+        call: null,
+        canCall: true,
+      });
+      expect(await (await get(token, "203.0.113.7", ANA)).json()).toMatchObject({
+        call: { reason: "pay" },
+        canCall: false,
+      });
+    });
+
+    test("the cooldown applies to the guest who was attended, not to the others", async () => {
+      await post("pay", token, "203.0.113.7", ANA);
+      await probe().changeCalls({
+        status: "attended",
+        resolvedAt: harness.clock.now(),
+        cooldownUntil: new Date(harness.clock.now().getTime() + 30 * SECOND_MS),
+      });
+      const ana = await post("pay", token, "203.0.113.7", ANA);
+      expect(ana.status).toBe(409);
+      expect(await ana.json()).toMatchObject({ status: "cooldown" });
+      expect((await post("pay", token, "203.0.113.7", BEN)).status).toBe(201);
+    });
+
+    test("without a guest id, calls from different sources still do not share state", async () => {
+      expect((await post("pay", token, "203.0.113.7")).status).toBe(201);
+      expect((await get(token, "198.51.100.4")).status).toBe(200);
+      expect(await (await get(token, "198.51.100.4")).json()).toMatchObject({ call: null });
     });
   });
 

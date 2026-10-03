@@ -43,8 +43,8 @@ export const staffPresence = pgTable(
 );
 
 /**
- * A guest's call for a Waiter at a Table session. At most one unfinished call per session
- * (partial unique index); `cooldown_until` holds the pause after it was attended.
+ * A guest's call for a Waiter at a Table session. At most one unfinished call per guest and
+ * session (partial unique index); `cooldown_until` holds the pause after it was attended.
  */
 export const waiterCall = pgTable(
   "waiter_call",
@@ -73,12 +73,12 @@ export const waiterCall = pgTable(
       onDelete: "set null",
     }),
     cooldownUntil: timestamp("cooldown_until"),
-    /** Opaque hash of the guest's source; never shown. */
+    /** Opaque hash of the guest's id (or source); the guest's own key, never shown. */
     guestFingerprint: text("guest_fingerprint").notNull(),
   },
   (table) => [
-    uniqueIndex("waiterCall_session_unfinished_unique")
-      .on(table.tableSessionId)
+    uniqueIndex("waiterCall_session_guest_unfinished_unique")
+      .on(table.tableSessionId, table.guestFingerprint)
       .where(sql`${table.status} <> 'attended'`),
     index("waiterCall_location_status_idx").on(table.locationId, table.status),
   ],

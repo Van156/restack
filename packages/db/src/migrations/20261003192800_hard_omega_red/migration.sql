@@ -1,0 +1,2 @@
+DROP INDEX "waiterCall_session_unfinished_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "waiterCall_session_guest_unfinished_unique" ON "waiter_call" ("table_session_id","guest_fingerprint") WHERE "status" <> 'attended';
