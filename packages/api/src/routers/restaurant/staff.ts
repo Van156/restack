@@ -10,6 +10,7 @@ import { accessibleLocationIds, assertLocationAccess } from "../../lib/location-
 import type { LocationScopeContext } from "../../lib/location-scope";
 import { signActingToken } from "../../lib/acting-token";
 import { verifyMemberPin } from "../../lib/pin";
+import { loadLocationRoster } from "./staff-roster";
 
 const MAX_LOCATIONS_PER_ASSIGNMENT = 100;
 
@@ -249,6 +250,25 @@ export const staffRouter = {
         byMember.set(member.memberId, entry);
       }
       return [...byMember.values()].sort((a, b) => a.name.localeCompare(b.name));
+    }),
+
+  /**
+   * Staff who can work at a Location (assigned Staff and the Owner) for the shared-device picker
+   * and the Override approver list: names, Roles and whether each can give Overrides (resolved
+   * through Role permissions, custom Roles included). Needs `order:take` and Location access.
+   */
+  listAtLocation: orgProcedure
+    .use(requirePermission({ order: ["take"] }))
+    .input(z.object({ locationId: z.string().min(1) }))
+    .handler(async ({ context, input }) => {
+      await assertLocationAccess(context, input.locationId);
+      const roster = await loadLocationRoster(context.db, context.org.id, input.locationId);
+      return roster.map((row) => ({
+        memberId: row.memberId,
+        name: row.name,
+        role: row.role,
+        canGiveOverride: Boolean(row.permissions.override?.includes("give")),
+      }));
     }),
 
   /** Attaches Locations to a pending invitation; they become assignments on acceptance. */

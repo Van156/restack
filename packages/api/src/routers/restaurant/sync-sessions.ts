@@ -171,7 +171,7 @@ export async function applyOpenSession(
  */
 export async function applyMoveSession(
   context: SyncSessionContext,
-  record: { idempotencyKey: string; deviceAt: Date },
+  record: { idempotencyKey: string; deviceAt: Date; actingToken?: string },
   payload: z.infer<typeof moveSessionPayload>,
 ): Promise<SyncOutcome> {
   return atomically(context, async (inner) => {
@@ -190,6 +190,7 @@ export async function applyMoveSession(
       throw new ORPCError("NOT_FOUND", { message: "Table session not found." });
     }
     await assertLocationAccess(inner, session.locationId);
+    await resolveActingMemberId(inner, session.locationId, record.actingToken);
     if (session.tableMoveKey === record.idempotencyKey) {
       return { status: SYNC_STATUS.alreadyApplied, entityId: session.id };
     }

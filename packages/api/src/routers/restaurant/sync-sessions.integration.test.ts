@@ -433,4 +433,30 @@ describe.skipIf(!reachable)("restaurant sync: Table sessions opened and moved of
       expect(result).toMatchObject({ status: "rejected", reason: { code: "FORBIDDEN" } });
     });
   });
+  describe("acting member on moves", () => {
+    test("a move with a forged acting token is rejected and a genuine one applies", async () => {
+      const openedKey = "open-1";
+      await push([open(openedKey)]);
+      const { actingToken } = await call(
+        restaurantRouter.staff.switchIn,
+        {
+          locationId: scenario.seed.locations.a,
+          memberId: scenario.seed.staff.waiterA.memberId,
+          pin: "4821",
+        },
+        { context: await scenario.as("cashierA") },
+      );
+      harness.clock.setNow(SYNC_AT);
+
+      const [forged] = await push([
+        { ...move("move-1", { sessionKey: openedKey }, tableId("t3"), at(10)), actingToken: "x" },
+      ]);
+      expect(forged).toMatchObject({ status: "rejected", reason: { code: "FORBIDDEN" } });
+
+      const [genuine] = await push([
+        { ...move("move-2", { sessionKey: openedKey }, tableId("t3"), at(11)), actingToken },
+      ]);
+      expect(genuine).toMatchObject({ status: "applied" });
+    });
+  });
 });

@@ -27,6 +27,8 @@ An Override lets a Staff member without the permission perform a guarded action 
 - No token: the session's member. An invalid or expired token is FORBIDDEN, never ignored.
 - The member must still be assigned to the Location and hold `order:take`.
 - A raw member id from input is never trusted.
+- `orders.moveSession` and `orders.requestBill` accept `actingToken` too and verify it (a forged one is FORBIDDEN); neither action stores a member, so nothing is attributed. The same holds for a synced `move_session`.
+- `staff.listAtLocation({ locationId })` (`order:take`, Location access) feeds the Staff picker and the Override approver list: `{ memberId, name, role, canGiveOverride }` for the Staff assigned to the Location plus the Owner. `canGiveOverride` resolves `override:give` through Role permissions, so custom Roles count.
 
 ## Table sessions and deletion
 

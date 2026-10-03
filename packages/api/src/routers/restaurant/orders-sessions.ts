@@ -116,11 +116,14 @@ export const orderSessionsRouter = {
       z.object({
         tableSessionId: z.string().min(1),
         tableId: z.string().min(1),
+        actingToken: actingTokenInput,
       }),
     )
     .handler(async ({ context, input }) => {
       const session = await loadSessionInScope(context, input.tableSessionId);
       assertSessionUnsettled(session);
+      // Moves are not attributed to a member; the token is still verified, never ignored.
+      await resolveActingMemberId(context, session.locationId, input.actingToken);
       const table = await loadTableInOrg(context, input.tableId);
       if (table.locationId !== session.locationId) {
         throw new ORPCError("BAD_REQUEST", {
@@ -145,10 +148,11 @@ export const orderSessionsRouter = {
   /** Marks the bill as requested (the Bill itself is computed at checkout). Repeating it is a no-op. */
   requestBill: orgProcedure
     .use(requirePermission({ order: ["take"] }))
-    .input(z.object({ tableSessionId: z.string().min(1) }))
+    .input(z.object({ tableSessionId: z.string().min(1), actingToken: actingTokenInput }))
     .handler(async ({ context, input }) => {
       const session = await loadSessionInScope(context, input.tableSessionId);
       assertSessionUnsettled(session);
+      await resolveActingMemberId(context, session.locationId, input.actingToken);
       if (session.status === "bill_requested") {
         return session;
       }

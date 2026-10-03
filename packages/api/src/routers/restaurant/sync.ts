@@ -157,11 +157,7 @@ async function applyRecord(
     case "move_session": {
       await requirePermissions(context, { order: ["take"] });
       const payload = parse(moveSessionPayload, record.payload);
-      return applyMoveSession(
-        context,
-        { idempotencyKey: record.idempotencyKey, deviceAt },
-        payload,
-      );
+      return applyMoveSession(context, { ...common, deviceAt }, payload);
     }
     case "order_line": {
       await requirePermissions(context, { order: ["take"] });

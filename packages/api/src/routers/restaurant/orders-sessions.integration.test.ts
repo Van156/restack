@@ -227,4 +227,62 @@ describe.skipIf(!reachable)("restaurant orders: Table sessions", () => {
       ).toBe("FORBIDDEN");
     });
   });
+  describe("acting member on move and bill request", () => {
+    async function switchInWaiterA() {
+      await call(restaurantRouter.staff.setPin, { pin: "4821" }, { context: await as("waiterA") });
+      const { actingToken } = await call(
+        restaurantRouter.staff.switchIn,
+        { locationId: seed.locations.a, memberId: seed.staff.waiterA.memberId, pin: "4821" },
+        { context: await as("cashierA") },
+      );
+      return actingToken;
+    }
+
+    test("moveSession and requestBill accept a valid acting token", async () => {
+      const actingToken = await switchInWaiterA();
+      const session = await open("cashierA", service.tables.t1);
+
+      const moved = await call(
+        restaurantRouter.orders.moveSession,
+        { tableSessionId: session.id, tableId: service.tables.t2, actingToken },
+        { context: await as("cashierA") },
+      );
+      expect(moved.tableId).toBe(service.tables.t2);
+
+      const requested = await call(
+        restaurantRouter.orders.requestBill,
+        { tableSessionId: session.id, actingToken },
+        { context: await as("cashierA") },
+      );
+      expect(requested.status).toBe("bill_requested");
+    });
+
+    test("a forged acting token is FORBIDDEN and changes nothing", async () => {
+      const session = await open("cashierA", service.tables.t1);
+
+      expect(
+        await codeOf(
+          call(
+            restaurantRouter.orders.moveSession,
+            { tableSessionId: session.id, tableId: service.tables.t2, actingToken: "forged" },
+            { context: await as("cashierA") },
+          ),
+        ),
+      ).toBe("FORBIDDEN");
+      expect(
+        await codeOf(
+          call(
+            restaurantRouter.orders.requestBill,
+            { tableSessionId: session.id, actingToken: "forged" },
+            { context: await as("cashierA") },
+          ),
+        ),
+      ).toBe("FORBIDDEN");
+      const [stored] = await harness.db
+        .select()
+        .from(schema.tableSession)
+        .where(eq(schema.tableSession.id, session.id));
+      expect(stored).toMatchObject({ tableId: service.tables.t1, status: "open" });
+    });
+  });
 });

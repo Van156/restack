@@ -408,4 +408,62 @@ describe.skipIf(!reachable)("restaurant staff: assignments, invitations and PINs
       ).toBe("FORBIDDEN");
     });
   });
+  describe("listAtLocation", () => {
+    const list = async (key: keyof RestaurantSeed["staff"], locationId = seed.locations.a) =>
+      call(restaurantRouter.staff.listAtLocation, { locationId }, { context: await as(key) });
+
+    test("a Waiter lists the Owner and the Staff assigned here with Override ability", async () => {
+      const staff = await list("waiterA");
+
+      expect(staff.map((row) => row.memberId).sort()).toEqual(
+        [
+          seed.staff.owner.memberId,
+          seed.staff.admin.memberId,
+          seed.staff.cashierA.memberId,
+          seed.staff.waiterA.memberId,
+        ].sort(),
+      );
+      const byId = new Map(staff.map((row) => [row.memberId, row]));
+      expect(byId.get(seed.staff.owner.memberId)).toMatchObject({
+        role: "owner",
+        canGiveOverride: true,
+      });
+      expect(byId.get(seed.staff.admin.memberId)?.canGiveOverride).toBe(true);
+      expect(byId.get(seed.staff.waiterA.memberId)).toMatchObject({
+        role: "waiter",
+        canGiveOverride: false,
+      });
+      expect(Object.keys(staff[0]!).sort()).toEqual([
+        "canGiveOverride",
+        "memberId",
+        "name",
+        "role",
+      ]);
+    });
+
+    test("a custom Role holding override:give can give Overrides", async () => {
+      await harness.db.insert(schema.organizationRole).values({
+        id: "role-supervisor",
+        organizationId: seed.organizationId,
+        role: "supervisor",
+        permission: JSON.stringify({ order: ["take"], override: ["give"] }),
+      });
+      await harness.db
+        .update(schema.member)
+        .set({ role: "supervisor" })
+        .where(eq(schema.member.id, seed.staff.cashierA.memberId));
+
+      const staff = await list("waiterA");
+
+      expect(staff.find((row) => row.memberId === seed.staff.cashierA.memberId)).toMatchObject({
+        role: "supervisor",
+        canGiveOverride: true,
+      });
+    });
+
+    test("it needs order:take and access to the Location", async () => {
+      expect(await codeOf(list("waiterA", seed.locations.b))).toBe("FORBIDDEN");
+      expect(await codeOf(list("waiterB"))).toBe("FORBIDDEN");
+    });
+  });
 });
