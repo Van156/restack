@@ -16,6 +16,9 @@ import { createBetterAuthAuthorization } from "../authorization";
 import type { Clock, Context } from "../context";
 import { createBetterAuthPlatformAdmin } from "../platform-admin";
 
+/** Secret the harness gives the API context for signing acting tokens (same as the auth secret). */
+export const TEST_ACTING_TOKEN_SECRET = "a-32-character-long-test-secret";
+
 /** Restaurant staff roles seeded by {@link RestaurantHarness.seedRestaurant}. */
 export type RestaurantStaffKey = "owner" | "admin" | "cashierA" | "waiterA" | "waiterB";
 
@@ -46,7 +49,7 @@ export type RestaurantHarness = {
 
 const AUTH_CONFIG: AuthConfig = {
   BETTER_AUTH_URL: "http://localhost:3000",
-  BETTER_AUTH_SECRET: "a-32-character-long-test-secret",
+  BETTER_AUTH_SECRET: TEST_ACTING_TOKEN_SECRET,
   CORS_ORIGIN: "http://localhost:3001",
   DEFAULT_MAX_ORGS_PER_USER: 10,
 };
@@ -149,6 +152,7 @@ export async function createRestaurantHarness(): Promise<RestaurantHarness> {
         auditLogger,
         defaultMaxOrganizationsPerUser: AUTH_CONFIG.DEFAULT_MAX_ORGS_PER_USER,
         clock,
+        actingTokenSecret: TEST_ACTING_TOKEN_SECRET,
       };
     },
     close: () => handle.close(),

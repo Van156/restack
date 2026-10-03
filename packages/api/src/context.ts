@@ -26,4 +26,6 @@ export type Context = {
   defaultMaxOrganizationsPerUser: number;
   /** Every time-dependent behaviour reads time here, never from `new Date()` directly. */
   clock: Clock;
+  /** Server secret that signs acting tokens (HMAC); the composition root passes `BETTER_AUTH_SECRET`. */
+  actingTokenSecret: string;
 };

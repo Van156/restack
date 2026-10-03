@@ -90,6 +90,7 @@ describe.skipIf(!reachable)("audit list procedures (R7.4, R7.5)", () => {
       auditLogger: {} as unknown as Context["auditLogger"],
       defaultMaxOrganizationsPerUser: authConfig.DEFAULT_MAX_ORGS_PER_USER,
       clock: { now: () => new Date() },
+      actingTokenSecret: "test-acting-token-secret-0000000",
     };
   }
 

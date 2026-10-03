@@ -93,6 +93,7 @@ describe.skipIf(!reachable)("createBetterAuthAuthorization integration (R4, R5, 
       auditLogger,
       defaultMaxOrganizationsPerUser: authConfig.DEFAULT_MAX_ORGS_PER_USER,
       clock: { now: () => new Date() },
+      actingTokenSecret: "test-acting-token-secret-0000000",
     };
   }
 

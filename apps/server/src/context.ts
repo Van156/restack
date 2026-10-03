@@ -21,6 +21,7 @@ export async function createContext({ context }: CreateContextOptions): Promise<
     auditLogger,
     defaultMaxOrganizationsPerUser: ENV.DEFAULT_MAX_ORGS_PER_USER,
     clock: systemClock,
+    actingTokenSecret: ENV.BETTER_AUTH_SECRET,
   };
 }
 

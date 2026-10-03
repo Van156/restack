@@ -86,6 +86,7 @@ describe.skipIf(!reachable)("platform admin router (R6)", () => {
       auditLogger: {} as unknown as Context["auditLogger"],
       defaultMaxOrganizationsPerUser: authConfig.DEFAULT_MAX_ORGS_PER_USER,
       clock: { now: () => new Date() },
+      actingTokenSecret: "test-acting-token-secret-0000000",
     };
   }
 

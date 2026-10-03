@@ -8,6 +8,7 @@ import { z } from "zod";
 import { orgProcedure, requirePermission } from "../../index";
 import { accessibleLocationIds, assertLocationAccess } from "../../lib/location-scope";
 import type { LocationScopeContext } from "../../lib/location-scope";
+import { signActingToken } from "../../lib/acting-token";
 import { verifyMemberPin } from "../../lib/pin";
 
 const MAX_LOCATIONS_PER_ASSIGNMENT = 100;
@@ -386,7 +387,9 @@ export const staffRouter = {
   /**
    * PIN switch-in on a shared device: the signed-in device session proves who is at the keyboard.
    * Verifies the PIN of a Staff member of the Location and returns their identity so the client
-   * attributes the next actions to them. The caller needs access to the Location too.
+   * attributes the next actions to them. The caller needs access to the Location too. Also returns
+   * a short-lived acting token (HMAC, bound to organization, Location, member and expiry) that order
+   * procedures accept as `actingToken` to record lines, voids and discounts as made by that member.
    */
   switchIn: orgProcedure
     .input(
@@ -406,12 +409,19 @@ export const staffRouter = {
         memberId: target.id,
         pin: input.pin,
       });
+      const { token, expiresAt } = signActingToken(
+        context.actingTokenSecret,
+        { organizationId: context.org.id, locationId: input.locationId, memberId: target.id },
+        context.clock.now(),
+      );
       return {
         memberId: target.id,
         userId: target.userId,
         name: target.name,
         role: target.role,
         locationId: input.locationId,
+        actingToken: token,
+        actingTokenExpiresAt: expiresAt,
       };
     }),
 };

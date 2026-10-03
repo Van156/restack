@@ -59,6 +59,7 @@ function fakeContext(overrides: {
     auditLogger: {} as unknown as Context["auditLogger"],
     defaultMaxOrganizationsPerUser: 3,
     clock: { now: () => new Date() },
+    actingTokenSecret: "test-acting-token-secret-0000000",
   };
 }
 

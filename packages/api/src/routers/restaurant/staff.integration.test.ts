@@ -5,7 +5,11 @@ import { call, ORPCError } from "@orpc/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 
-import { createRestaurantHarness } from "../../testing/restaurant-fixtures";
+import { verifyActingToken } from "../../lib/acting-token";
+import {
+  createRestaurantHarness,
+  TEST_ACTING_TOKEN_SECRET,
+} from "../../testing/restaurant-fixtures";
 import type { RestaurantHarness, RestaurantSeed } from "../../testing/restaurant-fixtures";
 import { restaurantRouter } from "./index";
 
@@ -292,6 +296,23 @@ describe.skipIf(!reachable)("restaurant staff: assignments, invitations and PINs
         userId: seed.staff.waiterA.userId,
         role: "waiter",
         locationId: seed.locations.a,
+      });
+    });
+
+    test("a correct PIN also returns an acting token bound to organization, Location, member and expiry", async () => {
+      await setPin("waiterA", "4821");
+      const result = await call(
+        restaurantRouter.staff.switchIn,
+        { locationId: seed.locations.a, memberId: seed.staff.waiterA.memberId, pin: "4821" },
+        { context: await as("cashierA") },
+      );
+      expect(
+        verifyActingToken(TEST_ACTING_TOKEN_SECRET, result.actingToken, harness.clock.now()),
+      ).toEqual({
+        organizationId: seed.organizationId,
+        locationId: seed.locations.a,
+        memberId: seed.staff.waiterA.memberId,
+        expiresAt: result.actingTokenExpiresAt,
       });
     });
 
