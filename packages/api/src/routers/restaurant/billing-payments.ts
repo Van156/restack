@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { orgProcedure, requirePermission } from "../../index";
 import { ensureBill, loadBillView } from "../../lib/bill";
+import { recordAuditThrough } from "../../lib/audit-in-transaction";
 import { consumeOverride } from "../../lib/override";
 import { hasOpenSessionAtTable } from "../../lib/table-session";
 import { loadChargeableSession, resolveChargingMemberId } from "./billing-shared";
@@ -191,7 +192,7 @@ export const billPaymentsRouter = {
       const { session, location } = await loadChargeableSession(context, input.tableSessionId);
       const memberId = await resolveChargingMemberId(context, location, input.actingToken);
 
-      const { billId, approverMemberId } = await context.db.transaction(async (tx) => {
+      await context.db.transaction(async (tx) => {
         const [bill] = await tx
           .select()
           .from(schema.bill)
@@ -234,24 +235,23 @@ export const billPaymentsRouter = {
             .set({ status: "bill_requested", settledAt: null })
             .where(eq(schema.tableSession.id, session.id)),
         );
-        return { billId: bill.id, approverMemberId };
+        await recordAuditThrough(tx, {
+          scope: "organization",
+          organizationId: context.org.id,
+          actorUserId: context.session.user.id,
+          action: "bill.reopened",
+          targetType: "bill",
+          targetId: bill.id,
+          metadata: {
+            tableSessionId: session.id,
+            overrideId: input.overrideId,
+            approverMemberId,
+            reason: input.reason ?? null,
+            recordedByMemberId: memberId,
+          },
+        });
       });
 
-      await context.auditLogger.record({
-        scope: "organization",
-        organizationId: context.org.id,
-        actorUserId: context.session.user.id,
-        action: "bill.reopened",
-        targetType: "bill",
-        targetId: billId,
-        metadata: {
-          tableSessionId: session.id,
-          overrideId: input.overrideId,
-          approverMemberId,
-          reason: input.reason ?? null,
-          recordedByMemberId: memberId,
-        },
-      });
       return loadBillView(context.db, session, location.suggestedTipPercent);
     }),
 };

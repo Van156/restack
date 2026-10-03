@@ -1,10 +1,10 @@
 import * as schema from "@base-template/db/schema";
-import { auditLog } from "@base-template/db/schema/audit";
 import type { OverrideAction } from "@base-template/db/schema/restaurant-staff";
 import { ORPCError } from "@orpc/server";
 import { and, eq, gt, isNull } from "drizzle-orm";
 
 import type { Clock } from "../context";
+import { recordAuditThrough } from "./audit-in-transaction";
 import type { DbExecutor } from "./executor";
 
 /** How long a minted Override can be presented. */
@@ -50,8 +50,8 @@ export async function consumeOverride(
     });
   }
 
-  // Written through the caller's executor, not the audit port, so it rolls back with the spend.
-  await deps.db.insert(auditLog).values({
+  // Through the caller's executor so it rolls back with the spend.
+  await recordAuditThrough(deps.db, {
     scope: "organization",
     organizationId: input.organizationId,
     actorUserId: input.actorUserId,

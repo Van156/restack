@@ -294,7 +294,10 @@ describe.skipIf(!reachable)("restaurant billing: payments, settle and reopen", (
         reopenedByMemberId: scenario.seed.staff.cashierA.memberId,
       });
 
-      const event = harness.auditLogger.events.find((e) => e.action === "bill.reopened");
+      const [event] = await harness.db
+        .select()
+        .from(schema.auditLog)
+        .where(eq(schema.auditLog.action, "bill.reopened"));
       expect(event).toMatchObject({
         targetId: row!.id,
         actorUserId: scenario.seed.staff.cashierA.userId,
