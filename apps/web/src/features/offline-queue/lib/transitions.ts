@@ -60,6 +60,7 @@ export function makeDue(record: QueueRecord, now: Date): void {
   record.nextAttemptAt = now.toISOString();
 }
 
+/** Marks a record synced and clears its retry and waiting state. */
 export function markRecordSynced(
   record: QueueRecord,
   now: Date,

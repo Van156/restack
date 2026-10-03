@@ -2,7 +2,7 @@ import { PinPad } from "@base-template/ui/components/pin-pad";
 
 import { pinEntryTitle, type PinEntryState } from "../lib/pin-entry";
 
-/** One stage of PIN entry with the T13 `PinPad`; the container advances the stage. */
+/** One stage of PIN entry with the shared `PinPad`; the container advances the stage. */
 export default function PinEntryFlow({
   state,
   errorMessage,
