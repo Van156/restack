@@ -40,6 +40,7 @@ describe("table session token", () => {
     expect(verifyTableSessionToken(SECRET, token, expiresAt)).toEqual({
       ok: false,
       reason: "expired",
+      claims,
     });
   });
 

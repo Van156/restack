@@ -90,7 +90,7 @@ describe.skipIf(!reachable)("waiter call: settled Bill closes the token", () => 
         { context: await scenario.as("waiterA") },
       ),
     ).toEqual([]);
-    expect(await getGuestState(guestDeps(), guestToken)).toMatchObject({
+    expect(await getGuestState(guestDeps(), guestToken, "f")).toMatchObject({
       state: { status: "closed" },
     });
     expect(

@@ -167,7 +167,7 @@ describe.skipIf(!reachable)("waiter call: staff side", () => {
         acknowledgedByMemberId: seed.staff.waiterA.memberId,
         acknowledgedAt: harness.clock.now(),
       });
-      expect(await getGuestState(guestDeps(), guestToken)).toMatchObject({
+      expect(await getGuestState(guestDeps(), guestToken, "f")).toMatchObject({
         state: { call: { status: "on_the_way" } },
       });
     });
