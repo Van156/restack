@@ -6,6 +6,8 @@ import { createHash, randomBytes, randomInt, scrypt, timingSafeEqual } from "nod
  */
 
 const SCRYPT_KEY_LENGTH = 32;
+/** scrypt cost of a stored PIN hash (Node's defaults), spelled out so a client can reproduce it. */
+export const PIN_KDF_PARAMS = { N: 16384, r: 8, p: 1, dkLen: SCRYPT_KEY_LENGTH } as const;
 const SALT_BYTES = 16;
 const PIN_PATTERN = /^\d{4,6}$/;
 /** No `0/O/1/I` so a code read aloud or typed from a screen is not misread. */
@@ -14,7 +16,13 @@ const PAIRING_CODE_LENGTH = 8;
 
 function derive(pin: string, salt: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    scrypt(pin, salt, SCRYPT_KEY_LENGTH, (error, key) => (error ? reject(error) : resolve(key)));
+    scrypt(
+      pin,
+      salt,
+      PIN_KDF_PARAMS.dkLen,
+      { N: PIN_KDF_PARAMS.N, r: PIN_KDF_PARAMS.r, p: PIN_KDF_PARAMS.p },
+      (error, key) => (error ? reject(error) : resolve(key)),
+    );
   });
 }
 
@@ -42,6 +50,16 @@ export async function verifyPin(pin: string, stored: string): Promise<boolean> {
   }
   const actual = await derive(pin, Buffer.from(saltHex, "hex"));
   return timingSafeEqual(actual, expected);
+}
+
+/** Salt (hex) and key of a stored `salt:hash`, or null. The key is server-only, equivalent to the hash. */
+export function parseStoredPin(stored: string): { saltHex: string; key: Buffer } | null {
+  const [saltHex, keyHex] = stored.split(":");
+  if (!saltHex || !keyHex) {
+    return null;
+  }
+  const key = Buffer.from(keyHex, "hex");
+  return key.length === SCRYPT_KEY_LENGTH ? { saltHex, key } : null;
 }
 
 /** A URL-safe 256-bit secret, shown once to its holder. */

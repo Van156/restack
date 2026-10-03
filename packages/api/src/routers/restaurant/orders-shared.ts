@@ -9,6 +9,7 @@ import { z } from "zod";
 import type { Clock } from "../../context";
 import { MAX_OFFLINE_TOKEN_AGE_MS, verifyActingToken } from "../../lib/acting-token";
 import { assertLocationAccess } from "../../lib/location-scope";
+import { deriveOfflineKey, verifyOfflineMac } from "../../lib/offline-actor";
 import type { LocationScopeContext } from "../../lib/location-scope";
 
 /** What the order procedures read from the context after `orgProcedure`. */
@@ -21,9 +22,29 @@ export type OrderContext = LocationScopeContext & {
    * device time, never after the server clock) instead of at the server's now.
    */
   actingTokenValidAt?: Date;
+  /** Set for a synced record with an `offlineActor`: attributed to that member once verified. */
+  offlineActor?: OfflineActorClaim;
   session: { user: { id: string } };
   auditLogger: import("@base-template/auth/audit").AuditLogger;
 };
+
+/** Who a synced record claims entered a PIN offline, with the record the mac signs. */
+export type OfflineActorClaim = {
+  memberId: string;
+  epoch: number;
+  mac: string;
+  idempotencyKey: string;
+  kind: string;
+  /** As sent, not clamped: the mac covers it. */
+  deviceRecordedAt: Date;
+};
+
+/** `data.reason` values of a refused offline actor (the device refreshes its material on stale). */
+export const OFFLINE_ACTOR_REASON = {
+  invalid: "offline_actor_invalid",
+  stale: "offline_actor_stale",
+  expired: "offline_actor_expired",
+} as const;
 
 /** Optional acting token from `staff.switchIn`: records the action as made by that member. */
 export const actingTokenInput = z.string().min(1).optional();
@@ -104,8 +125,11 @@ export type ActingMember = {
 export async function resolveActingMember(
   context: OrderContext,
   locationId: string,
-  actingToken: string,
+  actingToken: string | undefined,
 ): Promise<ActingMember> {
+  if (actingToken === undefined) {
+    return resolveOfflineActor(context, locationId, context.offlineActor!);
+  }
   const claims = verifyActingToken(
     context.actingTokenSecret,
     actingToken,
@@ -123,6 +147,21 @@ export async function resolveActingMember(
   if (!acting) {
     throw new ORPCError("FORBIDDEN", { message: INVALID_ACTING_TOKEN });
   }
+  return loadActingMember(
+    context,
+    locationId,
+    acting,
+    new ORPCError("FORBIDDEN", { message: INVALID_ACTING_TOKEN }),
+  );
+}
+
+/** The member must still work at the Location (the Owner always does); adds Role permissions. */
+async function loadActingMember(
+  context: OrderContext,
+  locationId: string,
+  acting: { id: string; role: string },
+  refusal: ORPCError<string, unknown>,
+): Promise<ActingMember> {
   if (!hasOwnerRole(acting.role)) {
     const [assignment] = await context.db
       .select({ id: schema.staffLocationAssignment.id })
@@ -134,11 +173,70 @@ export async function resolveActingMember(
         ),
       );
     if (!assignment) {
-      throw new ORPCError("FORBIDDEN", { message: INVALID_ACTING_TOKEN });
+      throw refusal;
     }
   }
   const permissions = await resolveOrgRolePermissions(context.db, context.org.id, acting.role);
-  return { ...acting, permissions };
+  return { id: acting.id, role: acting.role, permissions };
+}
+
+function refuseOfflineActor(
+  reason: (typeof OFFLINE_ACTOR_REASON)[keyof typeof OFFLINE_ACTOR_REASON],
+) {
+  return new ORPCError("FORBIDDEN", {
+    message: "The offline Staff entry could not be verified.",
+    data: { reason },
+  });
+}
+
+/** Verifies an offline actor's age, epoch, mac and assignment. See restaurant.md#offline-pin. */
+async function resolveOfflineActor(
+  context: OrderContext,
+  locationId: string,
+  claim: OfflineActorClaim,
+): Promise<ActingMember> {
+  const age = context.clock.now().getTime() - claim.deviceRecordedAt.getTime();
+  if (age > MAX_OFFLINE_TOKEN_AGE_MS) {
+    throw refuseOfflineActor(OFFLINE_ACTOR_REASON.expired);
+  }
+  const [row] = await context.db
+    .select({
+      id: schema.member.id,
+      role: schema.member.role,
+      epoch: schema.staffPin.offlineEpoch,
+    })
+    .from(schema.member)
+    .innerJoin(schema.staffPin, eq(schema.staffPin.memberId, schema.member.id))
+    .where(
+      and(eq(schema.member.id, claim.memberId), eq(schema.member.organizationId, context.org.id)),
+    );
+  if (!row) {
+    throw refuseOfflineActor(OFFLINE_ACTOR_REASON.invalid);
+  }
+  if (row.epoch !== claim.epoch) {
+    throw refuseOfflineActor(OFFLINE_ACTOR_REASON.stale);
+  }
+  const offlineKey = deriveOfflineKey(context.actingTokenSecret, {
+    organizationId: context.org.id,
+    locationId,
+    memberId: row.id,
+    binding: context.member.id,
+    epoch: row.epoch,
+  });
+  const signed = {
+    idempotencyKey: claim.idempotencyKey,
+    kind: claim.kind,
+    deviceRecordedAtMs: claim.deviceRecordedAt.getTime(),
+  };
+  if (!verifyOfflineMac(offlineKey, signed, claim.mac)) {
+    throw refuseOfflineActor(OFFLINE_ACTOR_REASON.invalid);
+  }
+  return loadActingMember(
+    context,
+    locationId,
+    row,
+    refuseOfflineActor(OFFLINE_ACTOR_REASON.invalid),
+  );
 }
 
 /**
@@ -150,7 +248,7 @@ export async function resolveActingMemberId(
   locationId: string,
   actingToken: string | undefined,
 ): Promise<string> {
-  if (actingToken === undefined) {
+  if (actingToken === undefined && !context.offlineActor) {
     return context.member.id;
   }
   const acting = await resolveActingMember(context, locationId, actingToken);

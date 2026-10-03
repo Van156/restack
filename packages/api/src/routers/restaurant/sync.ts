@@ -49,6 +49,14 @@ const recordInput = z.object({
   /** When the device recorded it. A time ahead of the server clock counts as the server's now. */
   deviceRecordedAt: z.coerce.date(),
   actingToken: actingTokenInput,
+  /** Set when a device switched Staff in with their PIN offline: see restaurant.md#offline-pin. */
+  offlineActor: z
+    .object({
+      memberId: z.string().min(1).max(100),
+      epoch: z.number().int().min(1),
+      mac: z.string().min(1).max(100),
+    })
+    .optional(),
 });
 
 const orderLinePayload = addLineInput
@@ -275,7 +283,21 @@ export const syncRouter = {
         const deviceAt = record.deviceRecordedAt > now ? now : record.deviceRecordedAt;
         try {
           // Acting tokens are checked at the time the device recorded the action.
-          const recordContext = { ...context, actingTokenValidAt: deviceAt };
+          const recordContext: SyncContext = {
+            ...context,
+            actingTokenValidAt: deviceAt,
+            offlineActor: record.offlineActor && {
+              ...record.offlineActor,
+              idempotencyKey: record.idempotencyKey,
+              kind: record.kind,
+              deviceRecordedAt: record.deviceRecordedAt,
+            },
+          };
+          if (record.offlineActor && record.actingToken !== undefined) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "A record carries an acting token or an offline actor, not both.",
+            });
+          }
           results.push({ ...base, ...(await applyRecord(recordContext, record, deviceAt)) });
         } catch (error) {
           if (!(error instanceof ORPCError)) {

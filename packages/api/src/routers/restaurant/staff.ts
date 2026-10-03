@@ -2,7 +2,7 @@ import { hasOwnerRole } from "@base-template/auth/owner-role";
 import { hashPin } from "@base-template/auth/staff-credentials";
 import * as schema from "@base-template/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { orgProcedure, requirePermission } from "../../index";
@@ -10,6 +10,7 @@ import { accessibleLocationIds, assertLocationAccess } from "../../lib/location-
 import type { LocationScopeContext } from "../../lib/location-scope";
 import { signActingToken } from "../../lib/acting-token";
 import { verifyMemberPin } from "../../lib/pin";
+import { offlineCredentialsProcedure, rotateOfflineEpochs } from "./staff-offline";
 import { loadLocationRoster } from "./staff-roster";
 
 const MAX_LOCATIONS_PER_ASSIGNMENT = 100;
@@ -61,7 +62,13 @@ async function storePin(context: LocationScopeContext, memberId: string, value: 
     .values({ organizationId: context.org.id, memberId, pinHash })
     .onConflictDoUpdate({
       target: schema.staffPin.memberId,
-      set: { pinHash, failedAttempts: 0, lockedUntil: null, updatedAt: new Date() },
+      set: {
+        pinHash,
+        failedAttempts: 0,
+        lockedUntil: null,
+        updatedAt: new Date(),
+        offlineEpoch: sql`${schema.staffPin.offlineEpoch} + 1`,
+      },
     });
 }
 
@@ -129,6 +136,7 @@ export const staffRouter = {
                 inArray(schema.staffLocationAssignment.locationId, toRemove),
               ),
             );
+          await rotateOfflineEpochs(tx, context.org.id, [target.id]);
         }
         if (toAdd.length > 0) {
           await tx.insert(schema.staffLocationAssignment).values(
@@ -198,6 +206,7 @@ export const staffRouter = {
         )
         .returning({ id: schema.staffLocationAssignment.id });
       if (removed.length > 0) {
+        await rotateOfflineEpochs(context.db, context.org.id, [target.id]);
         await recordAssignmentChange(context, target.id, [], [input.locationId]);
       }
       return { memberId: target.id, locationId: input.locationId, removed: removed.length > 0 };
@@ -393,6 +402,12 @@ export const staffRouter = {
       });
       return { memberId: target.id };
     }),
+
+  /**
+   * Material for switching Staff in with their PIN while the device is offline, one entry per
+   * Staff member of the Location who has a PIN. See docs/architecture/restaurant.md#offline-pin.
+   */
+  offlineCredentials: offlineCredentialsProcedure,
 
   /**
    * PIN switch-in on a shared device: verifies a Location member's PIN and returns their identity

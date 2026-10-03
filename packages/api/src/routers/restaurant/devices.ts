@@ -12,6 +12,7 @@ import { z } from "zod";
 import { orgProcedure, publicProcedure, requirePermission } from "../../index";
 import { assertLocationAccess } from "../../lib/location-scope";
 import type { LocationScopeContext } from "../../lib/location-scope";
+import { rotateLocationOfflineEpochs } from "./staff-offline";
 
 const MINUTE_MS = 60 * 1000;
 /** How long a pairing code can be redeemed. */
@@ -197,6 +198,7 @@ export const devicesRouter = {
           revokedAt: context.clock.now(),
         })
         .where(eq(schema.pairedDevice.id, device.id));
+      await rotateLocationOfflineEpochs(context.db, context.org.id, device.locationId);
       await context.auditLogger.record({
         scope: "organization",
         organizationId: context.org.id,

@@ -1,0 +1,1 @@
+ALTER TABLE "staff_pin" ADD COLUMN "offline_epoch" integer DEFAULT 1 NOT NULL;

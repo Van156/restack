@@ -63,6 +63,8 @@ export const staffPin = pgTable(
     pinHash: text("pin_hash").notNull(),
     failedAttempts: integer("failed_attempts").default(0).notNull(),
     lockedUntil: timestamp("locked_until"),
+    /** Generation of the offline switch-in material, bumped to kill older material. See restaurant.md#offline-pin. */
+    offlineEpoch: integer("offline_epoch").default(1).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

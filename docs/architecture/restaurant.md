@@ -2,7 +2,7 @@
 
 Rationale behind the restaurant domain code that does not fit in a code comment. Requirements live in [`docs/prd/restaurant-management.md`](../prd/restaurant-management.md) and the vocabulary in `GLOSSARY.md`.
 
-Code: `packages/api/src/routers/restaurant/*`, `packages/api/src/lib/{override,pin,acting-token,device-auth,table-session,table-session-token,location-presence,waiter-call-*}.ts`, `packages/db/src/schema/restaurant-*.ts`.
+Code: `packages/api/src/routers/restaurant/*`, `packages/api/src/lib/{override,pin,acting-token,offline-actor,device-auth,table-session,table-session-token,location-presence,waiter-call-*}.ts`, `packages/db/src/schema/restaurant-*.ts`.
 
 ## Overrides
 
@@ -167,7 +167,7 @@ Procedures: `packages/api/src/routers/restaurant/reports.ts` (`appRouter.restaur
 
 Procedure: `restaurant.sync.push` (`routers/restaurant/sync.ts`; sessions in `sync-sessions.ts`, Table metadata in `sync-table-metadata.ts`, last-write-wins helpers in `sync-lww.ts`, statuses and notes in `sync-results.ts`). It applies the records a device queued while offline and answers one result per record, in order: `applied`, `already_applied` or `rejected` with `reason: { code, message, data }`. It runs the same cores as the online procedures (`addLineCore`, `voidLineCore`, `recordPaymentCore`, `settleCore`, `issueDocumentCore`), so no business rule is duplicated.
 
-- Record: `{ idempotencyKey, kind, payload, deviceRecordedAt, actingToken? }`. Kinds: `open_session`, `move_session`, `order_line`, `send_to_kitchen`, `void`, `payment`, `takings`, `table_metadata`, `document_request`. A batch holds 1 to 200 records.
+- Record: `{ idempotencyKey, kind, payload, deviceRecordedAt, actingToken?, offlineActor? }` (`offlineActor` replaces `actingToken` when the member entered their PIN offline; both together reject the record with `BAD_REQUEST`; see [Offline PIN](#offline-pin)). Kinds: `open_session`, `move_session`, `order_line`, `send_to_kitchen`, `void`, `payment`, `takings`, `table_metadata`, `document_request`. A batch holds 1 to 200 records.
 - Independence: records are processed in order, each in its own transaction (a document request and a void run their own steps instead, because they call the provider or write audit after commit). A rejection leaves nothing of that record behind and never stops or undoes the others. A malformed payload or unknown kind is a rejection of that record. An error that is not a business rejection (database down) fails the whole call; the client retries the batch and applied records come back as `already_applied`.
 - Authority: each record checks its own permission (`order:take` for sessions, lines and voids, `billing:charge`, `setup:manage`) and Location scope, so a Waiter's batch applies the lines and rejects the payments. An acting token travels per record. Its signature and bindings (organization, Location, member still assigned) are checked at sync time, but its expiry is checked at the record's `deviceRecordedAt` (clamped to the server clock), so a record made inside the 15 minute life of a token is attributed to that member however late it syncs. User decision: only records within 48 hours before arrival qualify (`MAX_OFFLINE_TOKEN_AGE_MS`); an older record or one made after the token expired is `FORBIDDEN`. Online calls keep checking at the server's now.
 - Idempotency: order line, void and payment keys are the existing unique indexes per organization; a key reused for another session or line is a `CONFLICT` rejection. `already_applied` always comes from the write path of the core (unique key with `ON CONFLICT`, the Bill lock, the document unique per Bill and kind, the Table or session row lock), never from a probe before it, so two concurrent replays report one `applied` and one `already_applied`. A document request replays by Bill and kind, whatever its key.
@@ -181,6 +181,37 @@ Procedure: `restaurant.sync.push` (`routers/restaurant/sync.ts`; sessions in `sy
 - Original sale time: `deviceRecordedAt` is clamped to the server clock (a device clock ahead cannot post-date a sale). The sale time stored in `bill.settled_at` and `table_session.settled_at` (`settleTimeOf`) is the time of the payment that completed the Bill: the latest payment by effective time (`clientRecordedAt ?? recordedAt`), clamped to the server clock, whatever the mix of online and offline payments and the order they synced in (a Bill settled online follows the same rule, so it settles at its last payment). The DIAN document takes the Bill's `settled_at`. Reports, the Activated Location metric and the document therefore agree on the day of the sale; the server arrival time stays in `payment.recorded_at`. Chosen over a separate sale-time column because every reader of `settled_at` is already about the sale day.
 - Table metadata (name, seats, Area) is last-write-wins by device time over the whole record: `dining_table.metadata_written_at` and `metadata_write_key` hold the winning write. A tie on time goes to the greater idempotency key, so the outcome does not depend on arrival order and a replay is harmless. A losing write is `applied` with `note: "superseded"` the first time; replaying the winner, an overtaken winner or a loser is `already_applied` (a loser's key is kept in `sync_superseded_write`, as is the key of a write overtaken by a newer sync or online write). An online `tables.update` stamps the server time, so it takes part in the ordering. Needs `setup:manage` like the online procedure. Session moves use the same ordering and the same key log.
 - Document requests need a settled Bill (otherwise `CONFLICT`), default to `contingency: true`, and follow `issueDocument` (DIAN off returns the exempt receipt with `note: "exempt_receipt"`). The payload carries the original sale time. The 48 hour deadline counts from the server's receipt (see Outbox and incidents); the server never rejects a late sale, the client blocks contingency sales after 48 hours offline.
+
+## Offline PIN
+
+Spec story 123: a shared device switches Staff in with their PIN while offline, and the server later checks that the records they made were attributed after a correct PIN entry, without trusting a raw member id. Code: `lib/offline-actor.ts`, `routers/restaurant/staff-offline.ts`, `resolveOfflineActor` in `orders-shared.ts`; test double of the device in `packages/api/src/testing/offline-client.ts`.
+
+### Design
+
+- The server derives a per-member **offline key**: `HMAC-SHA256(BETTER_AUTH_SECRET, "restack:offline-key:v1:" + JSON([organizationId, locationId, memberId, binding, epoch]))`. The device never sees it in the clear; it receives it **sealed** under the member's PIN. Whoever enters the right PIN opens it, so a record carrying a valid mac proves the PIN was typed on a device that holds the material.
+- Sealing needs no new PIN secret: the stored hash is `salt:scrypt(PIN, salt)`, so the server already holds that scrypt key and uses it as an AES-256-GCM key. A wrong PIN fails the GCM tag, so the tag is the PIN check (no separate `check` field). The key itself is never returned, only the salt and the ciphertext.
+- `staff.offlineCredentials({ locationId })` (`order:take`, Location access) returns `{ members: [{ memberId, name, role, salt, params, sealedKey, epoch, expiresAt }] }`, one entry per Staff member of the Location (assigned Staff and the Owner) who has a PIN. Nothing else about the PIN leaves the server. Call it again on login and about daily while online.
+- `epoch` (`staff_pin.offline_epoch`) is the generation of a member's material. It is bumped when the member's PIN is set, changed or reset, when they are removed from a Location (`unassign`, `assignLocations`) and, for everyone who works at a Location, when a Paired device there is revoked. Older material then fails with `offline_actor_stale`.
+
+### Contract for the device
+
+1. Fetch and store `members` (never the PIN, never anything the user typed).
+2. To switch a member in offline: `pinKey = scrypt(utf8(pin), hexDecode(salt), N, r, p, dkLen)` with `params` (`N=16384, r=8, p=1, dkLen=32`: 16 MiB, a few hundred milliseconds on a phone; use a JS scrypt such as `@noble/hashes`, WebCrypto has none).
+3. `sealedKey` is `base64url(nonce[12] || ciphertext[32] || tag[16])`. Decrypt with AES-256-GCM (WebCrypto `AES-GCM`, `tagLength` 128, the input is `ciphertext || tag`) under `pinKey`, nonce the first 12 bytes, additional data `JSON.stringify([organizationId, locationId, memberId, epoch])`. A failure means a wrong PIN. The result is the 32 byte `offlineKey`; keep it in memory only, for the length of that member's turn.
+4. For every record made while that member is switched in: `mac = base64url(HMAC-SHA256(offlineKey, JSON.stringify([idempotencyKey, kind, deviceRecordedAtMs])))` where `deviceRecordedAtMs` is `deviceRecordedAt.getTime()` of the very value sent. Send `offlineActor: { memberId, epoch, mac }` and no `actingToken`.
+5. The server never counts offline attempts, so the device throttles them itself (it cannot lock the member out for everyone).
+
+### Server check
+
+`resolveOfflineActor` runs where an acting token would (`resolveActingMember`), so every attributed kind (lines, voids, payments and settling, documents, session opening, moves, sends) uses it. In order: the record is at most 48 hours old (`offline_actor_expired`); the member exists with a PIN and the claimed epoch is their current one (`offline_actor_invalid` / `offline_actor_stale`); the mac verifies in constant time against the key the server recomputes (`offline_actor_invalid`); the member is still assigned to the Location or is the Owner; and the usual permission of the record kind holds for that member (`order:take`, `billing:charge` plus the Location flag). All refusals are `FORBIDDEN` with `data.reason` set; a rejected record is not retried by time and needs the member to switch in again with fresh material.
+
+### What it does and does not give
+
+- Binding: the key includes the member id of the session that fetched the material, which must be the session that syncs. Material fetched by one login does not verify for another. It is not bound to the hardware (a browser has no secret the server can verify); a stolen unlocked device with its login holds the same material.
+- Offline brute force: the sealed key is a salted-scrypt ciphertext, so whoever copies the device storage can test the 10 000 to 1 000 000 possible PINs offline (accepted by the user decision; scrypt cost and the fact that a PIN only attributes records, never mints Overrides or tokens, bound the damage). Overrides and PIN-gated approvals still need a connection.
+- The mac covers key, kind and device time, not the payload: an attacker already holding a session and a valid key could change a payload. Those are exactly the cases the user decision accepts.
+- `expiresAt` (seven days) is a refresh hint for the device. The server does not enforce it; revocation is by epoch and the 48 hour record window.
+- Issuing material is not audited (a read of data the caller already receives sealed).
 
 ## Offline queue
 

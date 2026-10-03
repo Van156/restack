@@ -59,7 +59,7 @@ export async function resolveChargingMemberId(
   if (!(await rolesMayCharge(context, location, context.member.role))) {
     throw new ORPCError("FORBIDDEN", { message: WAITER_CANNOT_CHARGE });
   }
-  if (actingToken === undefined) {
+  if (actingToken === undefined && !context.offlineActor) {
     return context.member.id;
   }
   const acting = await resolveActingMember(context, location.id, actingToken);
