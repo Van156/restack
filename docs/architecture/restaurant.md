@@ -94,3 +94,22 @@ Verified in Alegra's reference: basic auth with email and token, `POST /invoices
 - No native idempotency key: the key travels in `observations` as `restack:<key>` and `findDocument` searches `GET /invoices?query=`. The database unique per Bill and kind is the real guarantee.
 - Response fields `stamp.cufe`, `stamp.barCodeContent`, `numberTemplate.fullNumber`; habilitación from `GET /company` `electronicInvoicing.status`.
 - HTTP 5xx, 429, 408 and network failures are transient; other 4xx are rejections.
+
+### Documents
+
+`dian.issueDocument` (`routers/restaurant/dian-documents.ts`, core in `lib/invoicing/`) issues the document of a settled Bill.
+
+- Unique per Bill and kind. The request takes the Bill lock, so concurrent or repeated calls return the same row and the provider is called once. A second kind is refused (`CONFLICT`) while the Bill holds a document that is not rejected, so one sale never yields both a POS document and a factura.
+- Gate order: settled Bill, DIAN on for the Location (off returns the exempt receipt text "Este documento no es una factura electrónica" and stores nothing), Plan (Completo or an active trial), an enabled connection, then the provider.
+- The default kind is the POS equivalent; a factura needs a buyer from the directory. No buyer means consumidor final, returned with a note that it gives the buyer no deduction.
+- The payload is a snapshot of the Bill at request time (lines with base and tax, tip as a separate line, buyer, sale time). A tip changed later never touches it. Sale time is the latest `payment.clientRecordedAt ?? recordedAt`.
+- A rejection is stored with the provider's reason. `retryDocument` returns it to pending (a factura may take a corrected buyer) and the provider key gains an `:r<n>` suffix so the retry is a new submission.
+
+### Outbox and incidents
+
+Every document has one outbox row. `transmitDocument` makes one attempt; `drainOutbox` retries every due row and is what the job runs.
+
+- Backoff doubles from one minute to an hour. The 48 hour deadline counts from when the request reached the server (connectivity recovered), the reading of Res. 165 art. 37 for synced offline sales. A drain flags a row `overdue` once past it and keeps retrying.
+- A transient failure keeps the document pending and opens the Location's incident (`provider_unavailable`). A contingency request opens one too (`offline_sale`, started at the sale time). At most one incident is open per Location (partial unique index); each issued document counts in `documentsCovered` and the incident closes when no pending outbox row is left.
+- Only the provider's answer settles a document (guarded `UPDATE ... WHERE status = 'pending'`), so two racing attempts count it once. The monthly counter (Bogota month of issue) is incremented in that same transaction. There is no hard stop at the fair-use ceiling.
+- `startInvoicingOutboxJob` drains once at start and then each interval, skips overlapping ticks, reports failures and keeps running. Each replica runs its own timer; the guarded update and the provider key make overlap harmless.
