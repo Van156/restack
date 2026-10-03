@@ -9,6 +9,7 @@ import { menuRouter } from "./menu";
 import { ordersRouter } from "./orders";
 import { overridesRouter } from "./overrides";
 import { planRouter } from "./plan";
+import { reportsRouter } from "./reports";
 import { setupRouter } from "./setup";
 import { staffRouter } from "./staff";
 import { stationsRouter } from "./stations";
@@ -27,6 +28,7 @@ export const restaurantRouter = {
   cashShift: cashShiftRouter,
   dian: dianRouter,
   plan: planRouter,
+  reports: reportsRouter,
   kitchen: kitchenRouter,
   devices: devicesRouter,
   areas: areasRouter,

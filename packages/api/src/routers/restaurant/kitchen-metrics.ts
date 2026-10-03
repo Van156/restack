@@ -9,14 +9,14 @@ import { orgProcedure, requirePermission } from "../../index";
 import { assertLocationAccess } from "../../lib/location-scope";
 import { loadStationAt } from "./kitchen-access";
 
-type TimedTicket = {
+export type TimedTicket = {
   sentAt: Date;
   startedAt: Date | null;
   readyAt: Date | null;
   deliveredAt: Date | null;
 };
 
-type TimingSummary = {
+export type TimingSummary = {
   ticketCount: number;
   /** Tickets already delivered. */
   completedCount: number;
@@ -43,7 +43,7 @@ function stats(durations: number[]): {
 }
 
 /** Preparation time is started to ready; pickup wait is ready to delivered; sent to ready is the whole kitchen wait. */
-function summarize(tickets: TimedTicket[]): TimingSummary {
+export function summarize(tickets: TimedTicket[]): TimingSummary {
   const prep = stats(
     tickets.flatMap((t) =>
       t.startedAt && t.readyAt ? [t.readyAt.getTime() - t.startedAt.getTime()] : [],

@@ -147,3 +147,12 @@ Procedures: `packages/api/src/routers/restaurant/plan.ts` (`appRouter.restaurant
 - Plan (`esencial`, `completo`) and trial end are fields on the Location. `plan.list` returns both per Location with the derived trial state (`none`, `active`, `expired`, started days left) and `dianAllowed` (`planAllowsDian`, the same gate the issuing path uses). Trial state is computed from the stored end and the injected clock; nothing is written when a trial lapses.
 - `plan.set` changes one Location's Plan and audits `plan.changed` (previous and new Plan) in the same transaction. Setting the current Plan again changes and audits nothing. It never touches the trial end: an Esencial Location keeps DIAN until its trial ends.
 - `plan.documentCounts` reads `dian_document_counter` (Bogota month, default the current one) per Location, zero when no document was issued. `overFairUse` is true above 5.000; it is information for the platform operator, never a stop.
+
+## Reports
+
+Procedures: `packages/api/src/routers/restaurant/reports.ts` (`appRouter.restaurant.reports`); aggregation in `packages/api/src/lib/sales-report.ts` (pure), data loading in `lib/sales-report-data.ts`. Every procedure needs `report:read` (Owner and Administrator; Cashier and Waiter are denied) plus Location scope.
+
+- Scope: an optional `locationId` filters to one Location (`assertLocationAccess`); without it the report covers `accessibleLocationIds`, so the Owner gets the all-Locations view and an Administrator only the assigned Locations. Results carry a `byLocation` breakdown next to the totals.
+- Day: a Bogota business day (`date`, default today by the injected clock; malformed is `BAD_REQUEST`). Sales belong to the day the Bill **settled** (`bill.settled_at`), so a late-night sale stays on its date and a reopened Bill leaves the report until it settles again. Offline sales therefore count on the day the server settled them (the sale time of an offline payment is not used).
+- `daily`: per tender the count and amount of payments of the day's settled Bills (`collectedTotal` includes tips because payments cover total plus tip), `salesTotal` (Bill totals, tip excluded) and `tipTotal` apart, and the DIAN documents with a sale time in the day by status and kind. Amounts are the recorded ones: Bill totals and payment amounts, never recomputed from the menu.
+- `kitchen`: the `kitchen.metrics` summary (`summarize` in `kitchen-metrics.ts`, shared) over Tickets sent that day, per Location and in total; the per-Station view stays in `kitchen.metrics`.
