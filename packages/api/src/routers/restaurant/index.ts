@@ -1,5 +1,6 @@
 import { areasRouter } from "./areas";
 import { billingRouter } from "./billing";
+import { cashShiftRouter } from "./cash-shift";
 import { dianRouter } from "./dian";
 import { devicesRouter } from "./devices";
 import { kitchenRouter } from "./kitchen";
@@ -22,6 +23,7 @@ export const restaurantRouter = {
   overrides: overridesRouter,
   orders: ordersRouter,
   billing: billingRouter,
+  cashShift: cashShiftRouter,
   dian: dianRouter,
   kitchen: kitchenRouter,
   devices: devicesRouter,

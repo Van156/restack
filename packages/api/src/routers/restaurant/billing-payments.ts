@@ -7,6 +7,7 @@ import { z } from "zod";
 import { orgProcedure, requirePermission } from "../../index";
 import { ensureBill, loadBillView, lockBill } from "../../lib/bill";
 import { recordAuditThrough } from "../../lib/audit-in-transaction";
+import { findOpenShift } from "../../lib/cash-shift";
 import { consumeOverride } from "../../lib/override";
 import { hasOpenSessionAtTable } from "../../lib/table-session";
 import { loadChargeableSession, resolveChargingMemberId } from "./billing-shared";
@@ -56,7 +57,8 @@ const sessionInput = z.object({ tableSessionId: z.string().min(1), actingToken: 
 export const billPaymentsRouter = {
   /**
    * Records a payment by tender. Split payments are separate calls; each must fit what is still
-   * due (total plus tip). Idempotent per key, also after the Bill settled.
+   * due (total plus tip). Idempotent per key, also after the Bill settled. The payment joins the
+   * Location's open Cash shift, or stays unattached when none is open (docs/architecture/restaurant.md#cash-shift).
    */
   recordPayment: orgProcedure
     .use(requirePermission({ billing: ["charge"] }))
@@ -92,12 +94,15 @@ export const billPaymentsRouter = {
             message: `The payment exceeds what is due (${Math.max(view.balanceDue, 0)} COP).`,
           });
         }
+        // Shared lock: a concurrent close waits for this payment, so it lands in the counted ledger.
+        const openShift = await findOpenShift(tx, session.locationId, "share");
         const [payment] = await tx
           .insert(schema.payment)
           .values({
             organizationId: context.org.id,
             locationId: session.locationId,
             billId: bill.id,
+            cashShiftId: openShift?.id ?? null,
             tender: input.tender,
             amount: input.amount,
             tendered: input.tender === "cash" ? (input.tendered ?? input.amount) : null,

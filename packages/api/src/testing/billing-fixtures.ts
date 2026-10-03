@@ -61,7 +61,7 @@ export async function seedBillingScenario(harness: RestaurantHarness) {
 
   /** Mints an Override for a guarded action, requested by one Staff member and approved by another. */
   async function mintOverride(
-    action: "discount" | "reopen_bill" | "void_line",
+    action: "discount" | "reopen_bill" | "void_line" | "close_shift_difference",
     target: string,
     requester: StaffKey = "cashierA",
     approver: StaffKey = "admin",
@@ -80,6 +80,15 @@ export async function seedBillingScenario(harness: RestaurantHarness) {
     return overrideId;
   }
 
+  /** Opens a Cash shift at Location A as the given Staff member (default the Cashier). */
+  async function openShift(openingAmount = 50_000, key: StaffKey = "cashierA") {
+    return call(
+      restaurantRouter.cashShift.open,
+      { locationId: seed.locations.a, openingAmount },
+      { context: await as(key) },
+    );
+  }
+
   async function codeOf(promise: Promise<unknown>): Promise<string | undefined> {
     try {
       await promise;
@@ -89,5 +98,5 @@ export async function seedBillingScenario(harness: RestaurantHarness) {
     return undefined;
   }
 
-  return { seed, service, as, nextKey, openSession, mintOverride, codeOf };
+  return { seed, service, as, nextKey, openSession, mintOverride, openShift, codeOf };
 }
