@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { orgProcedure, requirePermission } from "../../index";
-import { ensureBill, loadBillView } from "../../lib/bill";
+import { ensureBill, loadBillView, lockBill } from "../../lib/bill";
 import { loadChargeableSession, resolveChargingMemberId } from "./billing-shared";
 import { actingTokenInput } from "./orders-shared";
 
@@ -41,15 +41,18 @@ export const billBillRouter = {
     .handler(async ({ context, input }) => {
       const { session, location } = await loadChargeableSession(context, input.tableSessionId);
       const memberId = await resolveChargingMemberId(context, location, input.actingToken);
-      await ensureBill(context.db, session);
-      await context.db
-        .update(schema.bill)
-        .set({
-          tipAmount: input.amount,
-          tipUpdatedByMemberId: memberId,
-          tipUpdatedAt: context.clock.now(),
-        })
-        .where(eq(schema.bill.tableSessionId, session.id));
+      await context.db.transaction(async (tx) => {
+        const bill = await ensureBill(tx, session);
+        await lockBill(tx, bill.id);
+        await tx
+          .update(schema.bill)
+          .set({
+            tipAmount: input.amount,
+            tipUpdatedByMemberId: memberId,
+            tipUpdatedAt: context.clock.now(),
+          })
+          .where(eq(schema.bill.id, bill.id));
+      });
       return loadBillView(context.db, session, location.suggestedTipPercent);
     }),
 
@@ -60,11 +63,14 @@ export const billBillRouter = {
     .handler(async ({ context, input }) => {
       const { session, location } = await loadChargeableSession(context, input.tableSessionId);
       const memberId = await resolveChargingMemberId(context, location, input.actingToken);
-      await ensureBill(context.db, session);
-      await context.db
-        .update(schema.bill)
-        .set({ tipAmount: 0, tipUpdatedByMemberId: memberId, tipUpdatedAt: context.clock.now() })
-        .where(eq(schema.bill.tableSessionId, session.id));
+      await context.db.transaction(async (tx) => {
+        const bill = await ensureBill(tx, session);
+        await lockBill(tx, bill.id);
+        await tx
+          .update(schema.bill)
+          .set({ tipAmount: 0, tipUpdatedByMemberId: memberId, tipUpdatedAt: context.clock.now() })
+          .where(eq(schema.bill.id, bill.id));
+      });
       return loadBillView(context.db, session, location.suggestedTipPercent);
     }),
 };

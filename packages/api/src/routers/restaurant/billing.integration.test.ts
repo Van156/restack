@@ -157,6 +157,45 @@ describe.skipIf(!reachable)("restaurant billing: Bill and tips", () => {
       expect((await getBill()).payable).toBe(BILLING_TEST_TOTAL);
     });
 
+    /** Holds the Bill row lock like a payment in flight; `change` must not finish until it is released. */
+    const expectWaitsForBillLock = async (change: () => Promise<unknown>) => {
+      await setTip(1_000);
+      const [bill] = await harness.db.select().from(schema.bill);
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      let locked!: () => void;
+      const lockTaken = new Promise<void>((resolve) => (locked = resolve));
+      const holder = harness.db.transaction(async (tx) => {
+        await tx.select().from(schema.bill).where(eq(schema.bill.id, bill!.id)).for("update");
+        locked();
+        await held;
+      });
+      await lockTaken;
+
+      let done = false;
+      const pending = change().then(() => (done = true));
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(done).toBe(false);
+      release();
+      await holder;
+      await pending;
+      expect(done).toBe(true);
+    };
+
+    test("setting the tip waits for the Bill lock that payments hold", async () => {
+      await expectWaitsForBillLock(() => setTip(2_000));
+    });
+
+    test("removing the tip waits for the Bill lock that payments hold", async () => {
+      await expectWaitsForBillLock(async () =>
+        call(
+          restaurantRouter.billing.removeTip,
+          { tableSessionId: sessionId },
+          { context: await scenario.as("cashierA") },
+        ),
+      );
+    });
+
     test("a tip must be a non-negative whole number of pesos", async () => {
       expect(await scenario.codeOf(setTip(-1))).toBe("BAD_REQUEST");
       expect(await scenario.codeOf(setTip(10.5))).toBe("BAD_REQUEST");

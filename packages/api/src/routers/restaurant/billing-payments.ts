@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { orgProcedure, requirePermission } from "../../index";
-import { ensureBill, loadBillView } from "../../lib/bill";
+import { ensureBill, loadBillView, lockBill } from "../../lib/bill";
 import { recordAuditThrough } from "../../lib/audit-in-transaction";
 import { consumeOverride } from "../../lib/override";
 import { hasOpenSessionAtTable } from "../../lib/table-session";
@@ -68,11 +68,7 @@ export const billPaymentsRouter = {
       const outcome = await context.db.transaction(async (tx) => {
         const bill = await ensureBill(tx, session);
         // Serializes concurrent payments on one Bill so none can overshoot the balance.
-        await tx
-          .select({ id: schema.bill.id })
-          .from(schema.bill)
-          .where(eq(schema.bill.id, bill.id))
-          .for("update");
+        await lockBill(tx, bill.id);
 
         const [replay] = await tx
           .select()
@@ -137,11 +133,7 @@ export const billPaymentsRouter = {
 
       return context.db.transaction(async (tx) => {
         const bill = await ensureBill(tx, session);
-        await tx
-          .select({ id: schema.bill.id })
-          .from(schema.bill)
-          .where(eq(schema.bill.id, bill.id))
-          .for("update");
+        await lockBill(tx, bill.id);
         const [locked] = await tx.select().from(schema.bill).where(eq(schema.bill.id, bill.id));
         const view = await loadBillView(tx, session, location.suggestedTipPercent);
         if (locked!.status === "settled") {

@@ -82,6 +82,15 @@ export async function ensureBill(db: DbExecutor, session: SessionRef & { organiz
   return (await findBill(db, session.id))!;
 }
 
+/** Takes the Bill row lock (`FOR UPDATE`); serializes payments, settling and tip changes on one Bill. */
+export async function lockBill(db: DbExecutor, billId: string): Promise<void> {
+  await db
+    .select({ id: schema.bill.id })
+    .from(schema.bill)
+    .where(eq(schema.bill.id, billId))
+    .for("update");
+}
+
 /** Computes the Bill of a Table session from its unvoided lines, discounts, tip and payments. */
 export async function loadBillView(
   db: DbExecutor,
