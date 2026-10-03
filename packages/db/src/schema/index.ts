@@ -7,3 +7,4 @@ export * from "./restaurant-orders";
 export * from "./restaurant-billing";
 export * from "./restaurant-dian";
 export * from "./restaurant-cash-shift";
+export * from "./restaurant-waiter-call";

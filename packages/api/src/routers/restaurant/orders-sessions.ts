@@ -4,6 +4,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { orgProcedure, requirePermission } from "../../index";
+import { recordStaffSeen } from "../../lib/location-presence";
 import { assertLocationAccess } from "../../lib/location-scope";
 import { UNSETTLED_SESSION_STATUSES } from "../../lib/table-session";
 import {
@@ -42,6 +43,11 @@ export const orderSessionsRouter = {
     .input(z.object({ locationId: z.string().min(1) }))
     .handler(async ({ context, input }) => {
       await assertLocationAccess(context, input.locationId);
+      await recordStaffSeen(context.db, context.clock, {
+        organizationId: context.org.id,
+        locationId: input.locationId,
+        memberId: context.member.id,
+      });
       const sessions = await context.db
         .select()
         .from(schema.tableSession)
