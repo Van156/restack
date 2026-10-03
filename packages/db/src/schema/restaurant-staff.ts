@@ -73,8 +73,8 @@ export const staffPin = pgTable(
 );
 
 /**
- * A minted Override: bound to Location, action and target, short-lived and single use. The
- * identifier is a random UUID and doubles as the opaque token the requester presents.
+ * A minted Override: bound to Location, action and target, short-lived, single use. Its random id
+ * doubles as the opaque token the requester presents.
  */
 export const override = pgTable(
   "override",

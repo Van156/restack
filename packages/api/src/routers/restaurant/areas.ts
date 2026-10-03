@@ -102,9 +102,8 @@ export const areasRouter = {
     }),
 
   /**
-   * Deletes an Area and its Tables. Refused while a Table of the Area has an open Table session
-   * (an open Bill), and for any Table that ever had one: Table sessions keep their Table
-   * (`no action`), so order and Bill history never disappears.
+   * Deletes an Area and its Tables; refused while any Table has a session.
+   * See docs/architecture/restaurant.md#table-sessions-and-deletion.
    */
   delete: orgProcedure
     .use(requirePermission({ setup: ["manage"] }))

@@ -13,9 +13,8 @@ import {
 
 export const orderKitchenRouter = {
   /**
-   * Sends every line not yet sent (and not voided) to the kitchen: one Ticket per Station, using
-   * the Location's Station routing. Blocked as a whole when any line's item has no Station here.
-   * Sending with nothing new returns no Tickets.
+   * Sends every unsent, unvoided line to the kitchen as one Ticket per Station. Blocked as a whole
+   * when an item has no Station here; with nothing new it returns no Tickets.
    */
   sendToKitchen: orgProcedure
     .use(requirePermission({ order: ["take"] }))

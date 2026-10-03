@@ -6,9 +6,8 @@ import { eq } from "drizzle-orm";
 import type { AuditLogger } from "./audit/types";
 
 /**
- * Turns the Locations attached to an invitation into Staff Location assignments once it is
- * accepted. Runs on both acceptance paths (native accept and the invitation sign-up endpoint).
- * Idempotent: an existing assignment is left alone, so a replayed hook adds nothing.
+ * Turns an invitation's Locations into Staff Location assignments on acceptance (both paths).
+ * Idempotent: an existing assignment is left alone.
  */
 export async function applyInvitationLocations(
   database: Database,

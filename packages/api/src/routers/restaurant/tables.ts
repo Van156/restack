@@ -65,10 +65,7 @@ export const tablesRouter = {
       return created!;
     }),
 
-  /**
-   * Adds `count` Tables named from a pattern with `{n}` replaced by `start`, `start + 1`, ... All or
-   * nothing: any name already used in the Location fails the whole call.
-   */
+  /** Adds `count` Tables named from a `{n}` pattern; all or nothing if any name is taken. */
   bulkCreate: orgProcedure
     .use(requirePermission({ setup: ["manage"] }))
     .input(

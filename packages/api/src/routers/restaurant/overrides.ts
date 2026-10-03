@@ -16,10 +16,8 @@ const CANNOT_APPROVE = "This Staff member cannot approve here.";
 
 export const overridesRouter = {
   /**
-   * Mints an Override once the approver's PIN checks out. The caller (the requester) must work in
-   * the Location; the approver must hold `override:give` and be assigned to it (the Owner is
-   * exempt). The Override is bound to Location, action and target, expires in minutes and is spent
-   * by `consumeOverride` (`lib/override.ts`) in the procedure that performs the guarded action.
+   * Mints an Override once the approver's PIN checks out; the approver cannot be the requester
+   * (the Owner may). See docs/architecture/restaurant.md#overrides.
    */
   mint: orgProcedure
     .input(

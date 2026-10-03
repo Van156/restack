@@ -47,10 +47,7 @@ async function loadDeviceInScope(context: LocationScopeContext, deviceId: string
 }
 
 export const devicesRouter = {
-  /**
-   * Starts pairing a kitchen device: chooses its Location and Stations and returns a one-time
-   * code to type on the device. Only the code's hash is stored; the code is shown only here.
-   */
+  /** Starts pairing a kitchen device; returns a one-time code, stored only as a hash. */
   createPairing: orgProcedure
     .use(requirePermission({ setup: ["manage"] }))
     .input(
@@ -104,8 +101,8 @@ export const devicesRouter = {
     }),
 
   /**
-   * Public: the device itself redeems its one-time code and receives its revocable token, shown
-   * once (only the hash is kept). The single guarded `UPDATE` makes the code work exactly once.
+   * Public: the device redeems its one-time code (works once) for a revocable token, shown once.
+   * Rate limited per source and per code.
    */
   redeem: publicProcedure
     .input(z.object({ code: z.string().trim().min(1).max(32) }))

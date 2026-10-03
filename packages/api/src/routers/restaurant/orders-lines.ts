@@ -6,6 +6,7 @@ import { z } from "zod";
 import { orgProcedure, requirePermission } from "../../index";
 import {
   actingTokenInput,
+  idempotencyKey,
   assertSessionUnsettled,
   findVoidByKey,
   isLineSent,
@@ -14,8 +15,6 @@ import {
   resolveActingMemberId,
 } from "./orders-shared";
 import type { OrderContext } from "./orders-shared";
-
-const idempotencyKey = z.string().trim().min(1).max(100);
 
 type OrderLineRow = typeof schema.orderLine.$inferSelect;
 
@@ -35,10 +34,7 @@ async function findLineByKey(
   return row;
 }
 
-/**
- * Resolves the chosen modifiers of a Menu item into the snapshot stored on the line. Every id must
- * belong to the item and every group's selection count must sit within its limits.
- */
+/** Resolves chosen modifiers into the line snapshot; ids and selection counts must fit the item. */
 async function snapshotModifiers(
   context: OrderContext,
   menuItemId: string,
@@ -84,10 +80,7 @@ async function snapshotModifiers(
 }
 
 export const orderLinesRouter = {
-  /**
-   * The session with its lines (voided ones flagged, `ticketId` set once sent), Tickets with the
-   * ids of their lines, and discounts. Any member with access to the Location may read.
-   */
+  /** The session with its lines (voided flagged), Tickets with their line ids, and discounts. */
   getSession: orgProcedure
     .input(z.object({ tableSessionId: z.string().min(1) }))
     .handler(async ({ context, input }) => {
@@ -132,9 +125,8 @@ export const orderLinesRouter = {
     }),
 
   /**
-   * Appends an Order line. The Menu item's price and modifier deltas are copied onto the line and
-   * never recomputed. The idempotency key makes a client retry return the existing line (also
-   * after the item sold out meanwhile). Sold-out items are refused for this Location.
+   * Appends an Order line, copying price and modifier deltas. The idempotency key makes a retry
+   * return the existing line, even after sell-out; sold-out items are refused.
    */
   addLine: orgProcedure
     .use(requirePermission({ order: ["take"] }))
@@ -221,10 +213,7 @@ export const orderLinesRouter = {
       return created ?? (await findLineByKey(context, input.idempotencyKey))!;
     }),
 
-  /**
-   * Removes a line that has not been sent to the kitchen, as a void record without an Override.
-   * Sent lines need `voidLine` with an Override. Repeating the call with the same key is a no-op.
-   */
+  /** Removes an unsent line (a void record, no Override); sent lines need `voidLine`. Idempotent. */
   removeLine: orgProcedure
     .use(requirePermission({ order: ["take"] }))
     .input(

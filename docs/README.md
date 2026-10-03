@@ -22,6 +22,7 @@
 - [Auth](./architecture/auth.md): better-auth setup, invitation flow, audit hooks, platform lists, test harness.
 - [Audit log](./architecture/audit-log.md): write pipeline, request context, retention job, reads.
 - [Web app pages and routes](./architecture/web-app.md): permission-gated pages, org guard and onboarding, admin area, audit log pages, invitation acceptance.
+- [Restaurant](./architecture/restaurant.md): Overrides, PINs and lockout, acting member, Table sessions, Paired devices, orders.
 - [Data table](./architecture/data-table.md): URL search shape, hook contract, simple and advanced modes, server list queries, date windows.
 
 ## Comment policy

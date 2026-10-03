@@ -23,6 +23,9 @@ export type OrderContext = LocationScopeContext & {
 /** Optional acting token from `staff.switchIn`: records the action as made by that member. */
 export const actingTokenInput = z.string().min(1).optional();
 
+/** Client-generated key that makes a recorded action safe to retry. */
+export const idempotencyKey = z.string().trim().min(1).max(100);
+
 const SHORT_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const SHORT_CODE_LENGTH = 5;
 
@@ -67,10 +70,8 @@ export function assertSessionUnsettled(session: TableSessionRow): void {
 const INVALID_ACTING_TOKEN = "The acting token is invalid, expired or not for this Location.";
 
 /**
- * The member an action is attributed to. Without a token it is the session's member. With one it
- * is the member who switched in by PIN: the token must be genuine, unexpired and bound to this
- * organization and Location, and that member must still work here and be allowed to take orders.
- * A raw member id from input is never trusted; an invalid token is FORBIDDEN, never ignored.
+ * The member an action is attributed to: the session's, or with a valid acting token the member
+ * who switched in. An invalid token is FORBIDDEN, never ignored; a raw member id is never trusted.
  */
 export async function resolveActingMemberId(
   context: OrderContext,

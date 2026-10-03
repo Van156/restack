@@ -15,10 +15,8 @@ const MINUTE_MS = 60 * 1000;
 const INCORRECT = "Incorrect PIN.";
 
 /**
- * Checks a Staff member's PIN with attempt counting and temporary lockout. Resolves on a correct
- * PIN (and clears the counter); otherwise throws FORBIDDEN (wrong PIN, or none set: the same
- * answer, so a PIN-less member is not distinguishable) or TOO_MANY_REQUESTS while locked out.
- * The failed attempt is persisted before throwing, so it counts even though the call fails.
+ * Checks a PIN with attempt counting and lockout: resolves when correct, else FORBIDDEN (also when
+ * no PIN is set) or TOO_MANY_REQUESTS. See docs/architecture/restaurant.md#pins-and-lockout.
  */
 export async function verifyMemberPin(
   db: DbExecutor,

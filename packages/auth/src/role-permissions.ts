@@ -20,7 +20,7 @@ function mergePermissionsInto(
 
 /**
  * Aggregates the permissions of comma-separated built-in or custom org roles. Unknown names grant
- * nothing; better-auth already validates role names before `beforeCreateInvitation` runs.
+ * nothing; better-auth validates role names before `beforeCreateInvitation` runs.
  */
 export async function resolveOrgRolePermissions(
   database: Database,
@@ -60,7 +60,7 @@ export async function resolveOrgRolePermissions(
   );
 }
 
-/** Whether every `feature:action` pair in `required` is also present in `granted` (R2.2 superset check). */
+/** Whether every `feature:action` pair in `required` is also in `granted`. R2.2 */
 export function includesAllPermissions(
   granted: Record<string, string[]>,
   required: Record<string, string[]>,

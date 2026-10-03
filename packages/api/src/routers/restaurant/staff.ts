@@ -88,9 +88,8 @@ function recordAssignmentChange(
 
 export const staffRouter = {
   /**
-   * Sets the Locations a Staff member works in. The caller can only add or remove Locations inside
-   * their own scope (the Owner's is every Location); assignments outside it are left untouched.
-   * An Owner never needs, and never receives, assignments.
+   * Sets the Locations a Staff member works in, within the caller's scope (the Owner's is all).
+   * The Owner never needs or receives assignments.
    */
   assignLocations: orgProcedure
     .use(requirePermission({ staff: ["manage"] }))
@@ -203,10 +202,7 @@ export const staffRouter = {
       return { memberId: target.id, locationId: input.locationId, removed: removed.length > 0 };
     }),
 
-  /**
-   * Staff members with their assigned Locations inside the caller's scope, optionally narrowed to
-   * one Location. The Owner has no rows and is not listed.
-   */
+  /** Staff with their assigned Locations in the caller's scope; the Owner has no rows. */
   listAssignments: orgProcedure
     .use(requirePermission({ staff: ["manage"] }))
     .input(z.object({ locationId: z.string().min(1).optional() }))
@@ -255,10 +251,7 @@ export const staffRouter = {
       return [...byMember.values()].sort((a, b) => a.name.localeCompare(b.name));
     }),
 
-  /**
-   * Attaches Locations to a pending invitation (created through better-auth with its Role); they
-   * become Staff Location assignments when it is accepted. Same scope rule as `assignLocations`.
-   */
+  /** Attaches Locations to a pending invitation; they become assignments on acceptance. */
   setInvitationLocations: orgProcedure
     .use(requirePermission({ staff: ["manage"] }))
     .input(
@@ -324,10 +317,7 @@ export const staffRouter = {
       return { invitationId: invitation.id, locationIds: requested };
     }),
 
-  /**
-   * A Staff member sets their own PIN. Changing an existing PIN needs the current one (counted
-   * toward the lockout like any other attempt); forgotten PINs go through `resetPin`.
-   */
+  /** A Staff member sets their own PIN; changing needs the current one. Forgotten: `resetPin`. */
   setPin: orgProcedure
     .input(z.object({ pin, currentPin: z.string().optional() }))
     .handler(async ({ context, input }) => {
@@ -350,8 +340,8 @@ export const staffRouter = {
     }),
 
   /**
-   * An Administrator or the Owner replaces a Staff member's PIN and clears any lockout. An
-   * Administrator can only reset Staff of their own Locations, never the Owner. Audited.
+   * Replaces a Staff member's PIN and clears the lockout. Administrators only for Staff of their
+   * own Locations, never the Owner. Audited.
    */
   resetPin: orgProcedure
     .use(requirePermission({ staff: ["manage"] }))
@@ -385,11 +375,8 @@ export const staffRouter = {
     }),
 
   /**
-   * PIN switch-in on a shared device: the signed-in device session proves who is at the keyboard.
-   * Verifies the PIN of a Staff member of the Location and returns their identity so the client
-   * attributes the next actions to them. The caller needs access to the Location too. Also returns
-   * a short-lived acting token (HMAC, bound to organization, Location, member and expiry) that order
-   * procedures accept as `actingToken` to record lines, voids and discounts as made by that member.
+   * PIN switch-in on a shared device: verifies a Location member's PIN and returns their identity
+   * plus an acting token. See docs/architecture/restaurant.md#acting-member.
    */
   switchIn: orgProcedure
     .input(

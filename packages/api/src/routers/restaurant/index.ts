@@ -11,8 +11,7 @@ import { tablesRouter } from "./tables";
 
 /**
  * Restaurant setup and operations. Every procedure takes the organization from the session and
- * checks Location scope server-side (`lib/location-scope.ts`). Later tasks add the menu and orders
- * as sibling sub-routers here.
+ * checks Location scope server-side (`lib/location-scope.ts`).
  */
 export const restaurantRouter = {
   locations: locationsRouter,

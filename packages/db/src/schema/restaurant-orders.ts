@@ -17,7 +17,7 @@ import { location } from "./restaurant";
 import { diningTable, menuItem, menuTaxClass, station } from "./restaurant-setup";
 import { override } from "./restaurant-staff";
 
-/** A Table session is `open`, has had its `bill_requested`, or is `settled` (T6 settles it). */
+/** A Table session is `open`, `bill_requested` or `settled`. */
 export const TABLE_SESSION_STATUSES = ["open", "bill_requested", "settled"] as const;
 export type TableSessionStatus = (typeof TABLE_SESSION_STATUSES)[number];
 export const tableSessionStatus = pgEnum("table_session_status", TABLE_SESSION_STATUSES);
@@ -56,11 +56,8 @@ const memberRef = (name: string) =>
 const createdAt = () => timestamp("created_at").defaultNow().notNull();
 
 /**
- * One visit at a Table. At most one unsettled (open or bill requested) session per Table, enforced
- * by a partial unique index. `tableId` is `no action` toward `dining_table`: a Table with any
- * session, open or settled, cannot be deleted, so Bills and fiscal history never disappear; the
- * check runs at statement end so deleting a whole Location still cascades. T6 hangs the Bill off
- * this row.
+ * One visit at a Table; at most one unsettled session per Table (partial unique index).
+ * See docs/architecture/restaurant.md#table-sessions-and-deletion.
  */
 export const tableSession = pgTable(
   "table_session",
@@ -75,7 +72,7 @@ export const tableSession = pgTable(
     openedByMemberId: memberRef("opened_by_member_id"),
     openedAt: timestamp("opened_at").notNull(),
     settledAt: timestamp("settled_at"),
-    /** Increments when the QR is regenerated (T11). */
+    /** Increments when the QR is regenerated. */
     tokenVersion: integer("token_version").default(1).notNull(),
     shortCode: text("short_code").notNull(),
     createdAt: createdAt(),
@@ -90,9 +87,8 @@ export const tableSession = pgTable(
 );
 
 /**
- * Append-only Order line: never updated, changes are new records (`order_line_void`, tickets).
- * `unitPrice` is the Menu item price when the line was recorded and is never recomputed. The
- * idempotency key is unique per organization, so a replay finds the existing line.
+ * Append-only Order line: changes are new records. `unitPrice` is the Menu item price at recording;
+ * the idempotency key is unique per organization, so a replay finds the existing line.
  */
 export const orderLine = pgTable(
   "order_line",
@@ -127,8 +123,7 @@ export const orderLine = pgTable(
 );
 
 /**
- * Removal of an Order line. `overrideId` is set when the line had been sent to the kitchen; an
- * unsent line is simply removed. A line is voided at most once.
+ * Removal of an Order line; `overrideId` is set when the line had been sent. At most once per line.
  */
 export const orderLineVoid = pgTable(
   "order_line_void",
@@ -181,9 +176,8 @@ export const discount = pgTable(
 );
 
 /**
- * A Ticket: the lines of one send that a Station prepares. The status timestamps follow the
- * kitchen-display prototype (`sentAt`, `startedAt`, `readyAt`, `deliveredAt`). Deleting a Station
- * removes its Tickets (operational data; the Order lines stay).
+ * A Ticket: the lines of one send that a Station prepares. Deleting a Station removes its Tickets
+ * (the Order lines stay).
  */
 export const ticket = pgTable(
   "ticket",

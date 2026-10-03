@@ -1,9 +1,8 @@
 import { createHash, randomBytes, randomInt, scrypt, timingSafeEqual } from "node:crypto";
 
 /**
- * Staff PIN and Paired device secrets. A PIN is a low-entropy secret meant for quick switch-in, so
- * it is stored salted and slow-hashed and the caller applies attempt counting and lockout. Device
- * tokens and pairing codes are high-entropy, so a plain SHA-256 digest is enough to store.
+ * Staff PIN and Paired device secrets. A PIN is low-entropy, so it is salted and slow-hashed (the
+ * caller adds lockout); device tokens and pairing codes are high-entropy, so SHA-256 suffices.
  */
 
 const SCRYPT_KEY_LENGTH = 32;

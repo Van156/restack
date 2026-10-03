@@ -21,11 +21,8 @@ export type ConsumeOverrideInput = {
 };
 
 /**
- * Spends an Override for a guarded action (void of a sent line, discount, Bill reopen, Cash shift
- * close with a difference). The single `UPDATE ... WHERE` makes it atomic: it only succeeds when
- * the Override is unused, unexpired and bound to exactly this Location, action and target, so a
- * refused attempt never burns it and two concurrent callers cannot both win. Pass the caller's
- * transaction so the spend rolls back with the action it authorized. Returns the approver.
+ * Spends an Override for a guarded action and returns its approver. Atomic and bound to Location,
+ * action and target; a refused attempt never burns it. See docs/architecture/restaurant.md#overrides.
  */
 export async function consumeOverride(
   deps: { db: DbExecutor; clock: Clock },

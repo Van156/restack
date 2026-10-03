@@ -8,6 +8,7 @@ import { orgProcedure, requirePermission } from "../../index";
 import { consumeOverride } from "../../lib/override";
 import {
   actingTokenInput,
+  idempotencyKey,
   assertSessionUnsettled,
   findVoidByKey,
   isLineSent,
@@ -16,14 +17,10 @@ import {
   resolveActingMemberId,
 } from "./orders-shared";
 
-const idempotencyKey = z.string().trim().min(1).max(100);
-
 export const orderVoidsRouter = {
   /**
-   * Voids an Order line. A line already sent to the kitchen needs an Override (`void_line`, target
-   * the line id), spent in the same transaction as the void and audited as `order_line.voided`. An
-   * unsent line is simply removed (no Override, no audit event). Repeating a call with the same
-   * key returns the recorded void without spending anything.
+   * Voids an Order line. A sent line needs an Override (`void_line`, target the line id) spent in
+   * the same transaction; an unsent line is just removed. Idempotent per key.
    */
   voidLine: orgProcedure
     .use(requirePermission({ order: ["take"] }))
@@ -117,9 +114,8 @@ export const orderVoidsRouter = {
     }),
 
   /**
-   * Applies a discount (amount in COP or percent) to a Table session. Always needs an Override
-   * (`discount`, target the session id), spent in the same transaction and audited as
-   * `discount.applied`. Computing the discounted Bill is checkout's job.
+   * Applies a discount (amount or percent) to a Table session. Always needs an Override
+   * (`discount`, target the session id), spent in the same transaction.
    */
   applyDiscount: orgProcedure
     .use(requirePermission({ order: ["take"] }))

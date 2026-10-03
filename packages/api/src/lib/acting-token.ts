@@ -15,9 +15,8 @@ function sign(secret: string, payload: string): string {
 }
 
 /**
- * Signs a short-lived token that binds organization, Location, member and expiry (from the
- * injected clock). Minted by `staff.switchIn` after the PIN check; order procedures accept it to
- * attribute lines, voids and discounts to that member instead of the signed-in session's member.
+ * Signs a short-lived token binding organization, Location, member and expiry (injected clock).
+ * Minted by `staff.switchIn`; order procedures accept it to attribute actions to that member.
  */
 export function signActingToken(
   secret: string,

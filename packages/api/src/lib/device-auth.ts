@@ -14,9 +14,8 @@ export type AuthenticatedDevice = {
 };
 
 /**
- * Resolves a device token to its Location and Stations, or `null` when the token is unknown or the
- * device was revoked. Only active devices resolve. Records `lastSeenAt` (it feeds the Location's
- * online state). A kitchen procedure must restrict Ticket reads and updates to `stationIds`.
+ * Resolves a device token to its Location and Stations; `null` when unknown or revoked. Records
+ * `lastSeenAt`. Kitchen procedures must restrict Ticket access to `stationIds`.
  */
 export async function authenticateDevice(
   db: DbExecutor,
