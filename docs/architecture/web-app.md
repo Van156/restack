@@ -90,17 +90,18 @@ Impersonate and stop-impersonating go through better-auth's own client (`authCli
 
 `routes/_auth/_org/restaurant/route.tsx` is the layout (`SectionNav` tabs from the `restaurant` group in `navGroups`). UI copy is Spanish; error messages that come from the server are shown verbatim and are still English.
 
-| Route                   | Page                                                                  | Gate (UX only; the server re-checks)          |
-| ----------------------- | --------------------------------------------------------------------- | --------------------------------------------- |
-| `/restaurant/waiter`    | Waiter floor plan, Table sessions, calls, pending (`features/waiter`) | `order:take`                                  |
-| `/restaurant/kitchen`   | Kitchen board for Staff, on the active Location (`features/kitchen`)  | `order:take`                                  |
-| `/restaurant/locations` | Locations list and form (`features/locations`)                        | `setup:manage`; creating needs the Owner      |
-| `/restaurant/setup`     | Setup wizard, step in `?step=` (`features/setup`)                     | `setup:manage`                                |
-| `/restaurant/staff`     | Staff list, invite with Role and Locations, assign, reset PIN         | `staff:manage`; Owner row limited (see below) |
-| `/restaurant/devices`   | Paired devices: pair, rename, revoke (`features/devices`)             | `setup:manage`                                |
-| `/restaurant/pin`       | The caller's own PIN                                                  | none beyond membership                        |
-| `/activate`             | Public kitchen screen activation, under `_public-auth`, `?code=`      | none (no session)                             |
-| `/kitchen`              | Kitchen display of a Paired device (`features/kitchen`), top-level    | none (device token)                           |
+| Route                   | Page                                                                     | Gate (UX only; the server re-checks)             |
+| ----------------------- | ------------------------------------------------------------------------ | ------------------------------------------------ |
+| `/restaurant/waiter`    | Waiter floor plan, Table sessions, calls, pending (`features/waiter`)    | `order:take`                                     |
+| `/restaurant/kitchen`   | Kitchen board for Staff, on the active Location (`features/kitchen`)     | `order:take`                                     |
+| `/restaurant/cashier`   | Cashier: Bills to charge, cash shift, tips, pending (`features/cashier`) | `billing:charge`; shift views `cashShift:manage` |
+| `/restaurant/locations` | Locations list and form (`features/locations`)                           | `setup:manage`; creating needs the Owner         |
+| `/restaurant/setup`     | Setup wizard, step in `?step=` (`features/setup`)                        | `setup:manage`                                   |
+| `/restaurant/staff`     | Staff list, invite with Role and Locations, assign, reset PIN            | `staff:manage`; Owner row limited (see below)    |
+| `/restaurant/devices`   | Paired devices: pair, rename, revoke (`features/devices`)                | `setup:manage`                                   |
+| `/restaurant/pin`       | The caller's own PIN                                                     | none beyond membership                           |
+| `/activate`             | Public kitchen screen activation, under `_public-auth`, `?code=`         | none (no session)                                |
+| `/kitchen`              | Kitchen display of a Paired device (`features/kitchen`), top-level       | none (device token)                              |
 
 - **Active Location.** `useActiveLocation` resolves the Location a page works in: the one the user last picked (kept per organization in `localStorage`), else the first active one. Pages wrap their content in `LocationScope`, which shows the loader, retryable error or empty state and renders the picker. The Location list is already scoped server-side (the Owner sees all, everyone else their assignments).
 - **Query keys.** Restaurant queries use `orgQueryKey(organizationId, ...)` because switching organization does not clear the cache; setup writes invalidate the `["org", id, "setup"]` prefix.
@@ -137,6 +138,17 @@ Impersonate and stop-impersonating go through better-auth's own client (`authCli
 - **Optimistic state.** `overlayQueuedSessions` shows a Table opened offline as occupied (a queued move changes the Table) and `buildOrderView` merges queued lines into the order (`pending: "queued"`, de-duplicated by idempotency key once the server returns the same line); a queued void removes an unsent line and marks a sent one `void_needs_override` (then `void_queued` once an Override is attached). A session's lines queued under its opening key follow it after sync through the opener's `result.entityId`. Rejected and synced records are never applied.
 - **Pendientes.** `pendingRows` lists unsynced records with their status (`StatusBadge` kind `sync`), the waiting reason, the server's rejection and the action (a rejected send for items with no Station and the `offline_actor_invalid|stale|expired` refusals get Spanish copy from `refusalCopy`, others show the server's words): "Reintentar" for failed and rejected, "Autorizar" for a void waiting on an Override (`OverridePrompt` then `attachOverride`). The tab shows the count.
 - **Local cache (story 123).** `createWaiterCache` keeps, per organization and Location, the Areas, Tables, menu, open sessions and the lines of the last 30 sessions as plain JSON (`restack:waiter-cache:<organizationId>:<locationId>`); screens show the fresh value when there is one and the kept copy otherwise. The Staff roster of the Location is cached separately (see PIN switch-in) and the sealed PIN material in its own store (see Offline PIN); no PIN, PIN hash or acting token is ever stored. Override minting still needs a connection. Waiter calls are not cached.
+
+## Cashier pages
+
+`/restaurant/cashier` (`features/cashier`) is the register surface of the active Location. The view (`?view=cuentas|turno|propinas|pendientes`) and the Bill being charged (`?session=`) live in the URL. The page mounts the same `OfflineQueueProvider`, `ActingMemberProvider` and `ActingBar` as the waiter, so a charge is attributed to whoever switched in (acting token or offline PIN). Gate: `billing:charge`, which every Waiter holds at catalog level; the server also needs the Location's "waiters can charge" flag for a plain Waiter and refuses otherwise.
+
+- **Bills to charge.** `useCashierFeed` polls `orders.listOpenSessions` once per second (also the connectivity probe) and `buildCheckoutRows` lists open sessions, Tables that asked for the bill first. The Table and Area names come from `areas.list` and `tables.list`. Sessions, names and the last Bill seen of each session are kept per organization and Location (`restack:cashier-cache:<organizationId>:<locationId>`, the last 30 Bills, plain JSON, no tokens).
+- **Bill.** `useCheckoutBill` refetches `billing.getBill` every second; `toCheckoutBill` turns it into plain JSON (`CheckoutBill`, dates as ISO strings) and `ledgerProps` maps it to the T13 `BillLedger` (tax itemized by class, the tip on its own row outside the base). Queued payments count against the balance (`withQueuedPayments`) so the screen never offers money already taken.
+- **Payments.** `validatePayment` applies the server's tender rules before any call: cash may record the amount handed over (never less than the amount, change shown), card needs the voucher number and QR/transfer the reference seen on the cashier's own phone, and a payment cannot exceed the balance (a split Bill is several payments). The idempotency key of an attempt is kept until it succeeds (`reuseAttemptKey`), so retrying after a lost answer cannot charge twice. The form is keyed by the balance, so each payment starts from what is still due. "Cerrar la cuenta" settles and is enabled only at a zero balance with lines (`canSettle`).
+- **Tip.** `TipStep` offers the Location's suggested percent, no tip, or any whole amount, under the copy "Propina voluntaria". Removing a tip never asks for an Override and the tip can change after the Bill settled (a raise leaves a balance a later payment covers).
+- **Errors.** `describeCheckoutError` maps the server's English refusals by prefix to Spanish copy.
+- **Actions.** Every action is a `CheckoutAction` run by `runCheckout` against the oRPC client with the acting token; `useCheckoutCommands` keeps the failure as copy for the screen.
 
 ## Audit log pages
 

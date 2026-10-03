@@ -61,4 +61,8 @@ export const APP_PRESENTATIONAL_COMPONENTS: readonly string[] = [
   "features/waiter/components/free-table-view.tsx",
   "features/waiter/components/pending-records-view.tsx",
   "features/waiter/components/waiter-calls-view.tsx",
+  "features/cashier/components/checkout-rows-view.tsx",
+  "features/cashier/components/tip-step.tsx",
+  "features/cashier/components/payment-form.tsx",
+  "features/cashier/components/checkout-view.tsx",
 ];

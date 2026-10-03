@@ -29,6 +29,7 @@ describe("getSectionItems", () => {
     expect(getSectionItems("restaurant", member).map((item) => item.label)).toEqual([
       "Mesas",
       "Cocina",
+      "Caja",
       "Locales",
       "Configuración",
       "Equipo",
