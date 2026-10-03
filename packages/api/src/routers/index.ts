@@ -6,6 +6,7 @@ import { membersRouter } from "./members";
 import { organizationRouter } from "./organization";
 import { platformRouter } from "./platform";
 import { projectRouter } from "./project";
+import { restaurantRouter } from "./restaurant";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -28,6 +29,8 @@ export const appRouter = {
   members: membersRouter,
   // Organization lifecycle: organization.transferOwnership (spec account-and-org-settings §6.5).
   organization: organizationRouter,
+  // Restaurant POS: Locations and Staff Location assignment (more sub-routers in later tasks).
+  restaurant: restaurantRouter,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;

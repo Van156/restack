@@ -73,6 +73,7 @@ describe.skipIf(!reachable)("members list", () => {
       // Unused by the router under test.
       auditLogger: {} as unknown as Context["auditLogger"],
       defaultMaxOrganizationsPerUser: authConfig.DEFAULT_MAX_ORGS_PER_USER,
+      clock: { now: () => new Date() },
     };
   }
 

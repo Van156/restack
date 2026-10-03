@@ -58,6 +58,7 @@ function fakeContext(overrides: {
     // Unused by any builder under test.
     auditLogger: {} as unknown as Context["auditLogger"],
     defaultMaxOrganizationsPerUser: 3,
+    clock: { now: () => new Date() },
   };
 }
 

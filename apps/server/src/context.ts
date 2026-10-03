@@ -1,3 +1,4 @@
+import { systemClock } from "@base-template/api/clock";
 import type { Context as ApiContext } from "@base-template/api/context";
 import type { Context as HonoContext } from "hono";
 
@@ -19,6 +20,7 @@ export async function createContext({ context }: CreateContextOptions): Promise<
     platformAdmin,
     auditLogger,
     defaultMaxOrganizationsPerUser: ENV.DEFAULT_MAX_ORGS_PER_USER,
+    clock: systemClock,
   };
 }
 

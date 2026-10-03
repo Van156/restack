@@ -31,6 +31,7 @@ function fakeContext(organizationId: string): Context {
     // Unused by the router under test.
     auditLogger: {} as unknown as Context["auditLogger"],
     defaultMaxOrganizationsPerUser: 3,
+    clock: { now: () => new Date() },
   };
 }
 

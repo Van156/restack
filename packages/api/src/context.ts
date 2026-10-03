@@ -5,6 +5,9 @@ import type { Database } from "@base-template/db";
 import type { AuthorizationPort } from "./authorization";
 import type { PlatformAdminPort } from "./platform-admin";
 
+/** Injectable time source: the system clock in production, a controllable one in tests. */
+export type Clock = { now: () => Date };
+
 export type Context = {
   session: Session | null;
   db: Database;
@@ -21,4 +24,6 @@ export type Context = {
   auditLogger: AuditLogger;
   /** `DEFAULT_MAX_ORGS_PER_USER` (R1.1b), shown as the fallback when a user's override is cleared (R6.6). */
   defaultMaxOrganizationsPerUser: number;
+  /** Every time-dependent behaviour reads time here, never from `new Date()` directly. */
+  clock: Clock;
 };

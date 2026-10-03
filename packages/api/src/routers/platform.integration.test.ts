@@ -85,6 +85,7 @@ describe.skipIf(!reachable)("platform admin router (R6)", () => {
       // Unused by the router under test.
       auditLogger: {} as unknown as Context["auditLogger"],
       defaultMaxOrganizationsPerUser: authConfig.DEFAULT_MAX_ORGS_PER_USER,
+      clock: { now: () => new Date() },
     };
   }
 

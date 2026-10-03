@@ -75,6 +75,7 @@ describe.skipIf(!reachable)("organization transfer ownership", () => {
       platformAdmin: createBetterAuthPlatformAdmin(auth),
       auditLogger,
       defaultMaxOrganizationsPerUser: authConfig.DEFAULT_MAX_ORGS_PER_USER,
+      clock: { now: () => new Date() },
     };
   }
 

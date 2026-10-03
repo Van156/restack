@@ -89,6 +89,7 @@ describe.skipIf(!reachable)("audit list procedures (R7.4, R7.5)", () => {
       // Unused by the router under test.
       auditLogger: {} as unknown as Context["auditLogger"],
       defaultMaxOrganizationsPerUser: authConfig.DEFAULT_MAX_ORGS_PER_USER,
+      clock: { now: () => new Date() },
     };
   }
 

@@ -92,6 +92,7 @@ describe.skipIf(!reachable)("createBetterAuthAuthorization integration (R4, R5, 
       platformAdmin: createBetterAuthPlatformAdmin(auth),
       auditLogger,
       defaultMaxOrganizationsPerUser: authConfig.DEFAULT_MAX_ORGS_PER_USER,
+      clock: { now: () => new Date() },
     };
   }
 
