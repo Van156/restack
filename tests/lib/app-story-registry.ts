@@ -85,4 +85,5 @@ export const APP_PRESENTATIONAL_COMPONENTS: readonly string[] = [
   "features/reports/components/items-report-view.tsx",
   "features/reports/components/staff-report-view.tsx",
   "features/reports/components/kitchen-report-view.tsx",
+  "features/plan/components/plan-list-view.tsx",
 ];

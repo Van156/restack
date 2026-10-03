@@ -169,6 +169,10 @@ Impersonate and stop-impersonating go through better-auth's own client (`authCli
 - **Productos** (`reports.byItem`) and **Equipo** (`reports.byStaff`): quantity or Bills, sales, tips, cost and margin (with the percent over the revenue that has a cost). An item without a cost shows "Sin costo" instead of a zero cost, and a margin that leaves such sales out is labelled "Incompleto". A Bill closed by nobody known reads "Sin asignar".
 - **Cocina** (`reports.kitchen`): Tickets sent that day, delivered ones, and average / worst time from sent to ready, preparation and pickup wait.
 
+## Plan page
+
+`/restaurant/plan` (`features/plan`, nav "Plan") needs `subscription:manage`, so only the Owner sees it; the server refuses everyone else. One card per Location (`plan.list`, joined in `toPlanRows` with the month's `plan.documentCounts`): Plan, trial sentence with the end date in Bogota time and the days left, a note on DIAN when the Plan is Esencial (it keeps working during a trial, then needs Completo), the documents issued this month and whether the fair use of 5.000 was passed. The fair-use flag is information, nothing stops. Changing the Plan moves a Location to the other one after a confirmation that says what it means (`plan.set`, audited by the server); it never touches the trial end. No price is shown because the spec defines none.
+
 ## Audit log pages
 
 The organization page uses `audit.list`, scoped server-side to `ctx.org.id`; no organization override is accepted, so the page can never be pointed at another tenant's log. Members back the actor filter (a picker instead of a raw id) and resolve actor ids to names; they are paginated past better-auth's 100-row page size and capped, with an `isIncomplete` flag surfaced in the page.

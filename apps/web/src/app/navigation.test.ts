@@ -35,6 +35,7 @@ describe("getSectionItems", () => {
       "Configuración",
       "Equipo",
       "Dispositivos",
+      "Plan",
       "Mi PIN",
     ]);
   });
