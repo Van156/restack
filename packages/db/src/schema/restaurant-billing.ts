@@ -13,6 +13,7 @@ import {
 
 import { member, organization } from "./auth";
 import { location } from "./restaurant";
+import { cashShift } from "./restaurant-cash-shift";
 import { tableSession } from "./restaurant-orders";
 
 /** A Bill is `open` until settled, `settled` when paid in full and `reopened` after an Override. */
@@ -94,6 +95,8 @@ export const payment = pgTable(
     billId: text("bill_id")
       .notNull()
       .references(() => bill.id, { onDelete: "cascade" }),
+    /** The Location's open Cash shift when the payment was recorded; null when none was open. */
+    cashShiftId: text("cash_shift_id").references(() => cashShift.id, { onDelete: "set null" }),
     tender: paymentTender("tender").notNull(),
     amount: integer("amount").notNull(),
     tendered: integer("tendered"),
@@ -109,6 +112,7 @@ export const payment = pgTable(
   (table) => [
     unique("payment_org_idempotencyKey_unique").on(table.organizationId, table.idempotencyKey),
     index("payment_billId_idx").on(table.billId),
+    index("payment_cashShiftId_idx").on(table.cashShiftId),
     index("payment_locationId_recordedAt_idx").on(table.locationId, table.recordedAt),
     check("payment_amount_check", sql`${table.amount} >= 1`),
     check(
