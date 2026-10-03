@@ -3,6 +3,7 @@ import type { AuditLogger } from "@base-template/auth/audit";
 import type { Database } from "@base-template/db";
 
 import type { AuthorizationPort } from "./authorization";
+import type { AuthenticatedDevice } from "./lib/device-auth";
 import type { RateLimiter } from "./lib/rate-limit";
 import type { PlatformAdminPort } from "./platform-admin";
 
@@ -31,4 +32,6 @@ export type Context = {
   actingTokenSecret: string;
   /** Attempt limiter for public procedures; when absent they are not throttled. */
   rateLimiter?: RateLimiter;
+  /** Paired device resolved from `Authorization: Device <token>`; only kitchen procedures read it. */
+  device?: AuthenticatedDevice | null;
 };

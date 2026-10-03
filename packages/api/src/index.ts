@@ -24,11 +24,12 @@ export const protectedProcedure = publicProcedure.use(requireAuth);
 const NO_ACTIVE_ORGANIZATION_STATUS = 409;
 
 /**
- * Protected + requires an active organization the caller belongs to. Injects `context.org` and
- * `context.member` from the session, never from client input (R5.1).
- * See docs/architecture/authorization.md#org-procedures
+ * The active organization and membership of a signed-in caller, from the session and never from
+ * client input (R5.1). Throws when none is selected or the caller is no longer a member.
  */
-export const orgProcedure = protectedProcedure.use(async ({ context, next }) => {
+export async function resolveActiveOrg(
+  context: Context & { session: NonNullable<Context["session"]> },
+) {
   // Read from the session row to tell "none selected" from "no longer a member" without a port call.
   if (!context.session.session.activeOrganizationId) {
     throw new ORPCError("NO_ACTIVE_ORGANIZATION", {
@@ -44,13 +45,34 @@ export const orgProcedure = protectedProcedure.use(async ({ context, next }) => 
     });
   }
 
-  return next({
-    context: {
-      org: { id: membership.organizationId },
-      member: { id: membership.memberId, role: membership.role },
-    },
-  });
-});
+  return {
+    org: { id: membership.organizationId },
+    member: { id: membership.memberId, role: membership.role },
+  };
+}
+
+/**
+ * Protected + requires an active organization the caller belongs to. Injects `context.org` and
+ * `context.member` from the session, never from client input (R5.1).
+ * See docs/architecture/authorization.md#org-procedures
+ */
+export const orgProcedure = protectedProcedure.use(async ({ context, next }) =>
+  next({ context: await resolveActiveOrg(context) }),
+);
+
+/** Throws `FORBIDDEN` unless the caller holds every listed organization permission. */
+export async function assertOrgPermission(context: Context, permissions: OrgPermissions) {
+  const allowed = await context.authorization.hasOrgPermission(
+    context.headers,
+    // Cast only drops compile-time literal types; the runtime value is unchanged.
+    permissions as Record<string, string[]>,
+  );
+  if (!allowed) {
+    throw new ORPCError("FORBIDDEN", {
+      message: "Missing required organization permission.",
+    });
+  }
+}
 
 /**
  * Middleware factory: `orgProcedure.use(requirePermission({ feature: ["action"] }))`. Typed against
@@ -58,16 +80,7 @@ export const orgProcedure = protectedProcedure.use(async ({ context, next }) => 
  */
 export function requirePermission(permissions: OrgPermissions) {
   return o.middleware(async ({ context, next }) => {
-    const allowed = await context.authorization.hasOrgPermission(
-      context.headers,
-      // Cast only drops compile-time literal types; the runtime value is unchanged.
-      permissions as Record<string, string[]>,
-    );
-    if (!allowed) {
-      throw new ORPCError("FORBIDDEN", {
-        message: "Missing required organization permission.",
-      });
-    }
+    await assertOrgPermission(context, permissions);
     return next();
   });
 }

@@ -38,9 +38,19 @@ An Override lets a Staff member without the permission perform a guarded action 
 
 - `devices.redeem` is public. Its single guarded `UPDATE` makes a code work exactly once; only hashes of code and token are stored.
 - Rate limit: 20 attempts per source (first `x-forwarded-for`, else `x-real-ip`) and 5 per code in 15 minutes, through the injectable `RateLimiter` in `Context` (in-memory, per process, on the injected clock). Without a limiter in the context nothing is throttled.
-- `authenticateDevice` records `lastSeenAt`, which feeds the Location's online state. Kitchen procedures must restrict Ticket access to the device's `stationIds`.
+- `authenticateDevice` records `lastSeenAt`, which feeds the Location's online state. Kitchen procedures restrict Ticket access to the device's `stationIds`.
 
 ## Orders
 
 - Order lines are append-only; a void or a send is a new row. The idempotency key is unique per organization, so a client retry returns the stored row even after the item sold out.
 - A Ticket is the lines of one send that a Station prepares; deleting a Station removes its Tickets, the Order lines stay.
+
+## Kitchen display
+
+- Device transport: `Authorization: Device <token>`. The server context resolves it with `deviceFromHeaders` into `context.device` (unknown or revoked tokens give `null`). CORS already allows the `Authorization` header.
+- Only `restaurant.kitchen.{list, advance}` read `context.device`. Every other procedure builds on `protectedProcedure`, which needs a user session, so a device-only caller is `UNAUTHORIZED` there with no per-procedure check. `kitchen.metrics` needs `report:read` and so also rejects devices.
+- A device cannot name another Location or Station (`FORBIDDEN`), and a Ticket outside its Stations is `NOT_FOUND`. Staff need `order:take` and Location access; `stationId` is an optional filter.
+- Preparation time is `readyAt - startedAt` and pickup wait is `deliveredAt - readyAt`, as in the spec. Metrics are per Station for the business day the Ticket was sent.
+- `kitchen.list` shows unfinished Tickets always and delivered ones for the current business day only. It carries no prices.
+- Status moves one step at a time with a guarded `UPDATE ... WHERE status = <previous>`, so a double tap cannot skip a step; repeating the step just taken returns the Ticket.
+- `orders.listOpenSessions` flags each session with `hasReadyTicket` (a Ticket in `listo`) for the floor-plan marker.

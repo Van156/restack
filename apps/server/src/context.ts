@@ -1,4 +1,5 @@
 import { systemClock } from "@base-template/api/clock";
+import { deviceFromHeaders } from "@base-template/api/lib/device-auth";
 import { createRateLimiter } from "@base-template/api/lib/rate-limit";
 import type { Context as ApiContext } from "@base-template/api/context";
 import type { Context as HonoContext } from "hono";
@@ -26,6 +27,7 @@ export async function createContext({ context }: CreateContextOptions): Promise<
     clock: systemClock,
     actingTokenSecret: ENV.BETTER_AUTH_SECRET,
     rateLimiter,
+    device: await deviceFromHeaders(db, systemClock, headers),
   };
 }
 

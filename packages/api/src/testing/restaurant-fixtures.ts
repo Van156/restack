@@ -14,6 +14,7 @@ import type { TestHelpers } from "better-auth/plugins";
 
 import { createBetterAuthAuthorization } from "../authorization";
 import type { Clock, Context } from "../context";
+import { deviceFromHeaders } from "../lib/device-auth";
 import { createRateLimiter } from "../lib/rate-limit";
 import { createBetterAuthPlatformAdmin } from "../platform-admin";
 
@@ -45,6 +46,8 @@ export type RestaurantHarness = {
   seedRestaurant(): Promise<RestaurantSeed>;
   /** API context for a signed-in user whose active organization is `organizationId`. */
   contextFor(userId: string, organizationId: string): Promise<Context>;
+  /** API context for a Paired device: no user session, the token carried as the server expects. */
+  contextForDevice(token: string): Promise<Context>;
   close(): Promise<void>;
 };
 
@@ -158,6 +161,22 @@ export async function createRestaurantHarness(): Promise<RestaurantHarness> {
         clock,
         actingTokenSecret: TEST_ACTING_TOKEN_SECRET,
         rateLimiter,
+      };
+    },
+    async contextForDevice(token) {
+      const headers = new Headers({ authorization: `Device ${token}` });
+      return {
+        db: handle.db,
+        session: null,
+        headers,
+        authorization: createBetterAuthAuthorization(auth),
+        platformAdmin: createBetterAuthPlatformAdmin(auth),
+        auditLogger,
+        defaultMaxOrganizationsPerUser: AUTH_CONFIG.DEFAULT_MAX_ORGS_PER_USER,
+        clock,
+        actingTokenSecret: TEST_ACTING_TOKEN_SECRET,
+        rateLimiter,
+        device: await deviceFromHeaders(handle.db, clock, headers),
       };
     },
     close: () => handle.close(),

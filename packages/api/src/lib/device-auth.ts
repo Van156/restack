@@ -49,3 +49,22 @@ export async function authenticateDevice(
     stationIds: stations.map((row) => row.stationId).sort(),
   };
 }
+
+const DEVICE_SCHEME = "Device ";
+
+/**
+ * Resolves the `Authorization: Device <token>` header; `null` when absent, malformed or unknown.
+ * See docs/architecture/restaurant.md#paired-devices.
+ */
+export async function deviceFromHeaders(
+  db: DbExecutor,
+  clock: Clock,
+  headers: Headers,
+): Promise<AuthenticatedDevice | null> {
+  const value = headers.get("authorization");
+  if (!value?.startsWith(DEVICE_SCHEME)) {
+    return null;
+  }
+  const token = value.slice(DEVICE_SCHEME.length).trim();
+  return token ? authenticateDevice(db, clock, token) : null;
+}

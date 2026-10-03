@@ -35,12 +35,12 @@ async function loadTableInOrg(context: OrderContext, tableId: string) {
 }
 
 export const orderSessionsRouter = {
-  /** Open sessions (open or bill requested) of a Location, for the floor plan. */
+  /** Open sessions (open or bill requested) of a Location, each flagged when a Ticket is ready to deliver. */
   listOpenSessions: orgProcedure
     .input(z.object({ locationId: z.string().min(1) }))
     .handler(async ({ context, input }) => {
       await assertLocationAccess(context, input.locationId);
-      return context.db
+      const sessions = await context.db
         .select()
         .from(schema.tableSession)
         .where(
@@ -51,6 +51,21 @@ export const orderSessionsRouter = {
           ),
         )
         .orderBy(asc(schema.tableSession.openedAt));
+      const ready = await context.db
+        .selectDistinct({ tableSessionId: schema.ticket.tableSessionId })
+        .from(schema.ticket)
+        .where(
+          and(
+            eq(schema.ticket.locationId, input.locationId),
+            eq(schema.ticket.organizationId, context.org.id),
+            eq(schema.ticket.status, "listo"),
+          ),
+        );
+      const readyIds = new Set(ready.map((row) => row.tableSessionId));
+      return sessions.map((session) => ({
+        ...session,
+        hasReadyTicket: readyIds.has(session.id),
+      }));
     }),
 
   /** Opens a session at a free Table. One unsettled session per Table (CONFLICT otherwise). */
@@ -89,7 +104,12 @@ export const orderSessionsRouter = {
   /** Moves an unsettled session to a free Table of the same Location. */
   moveSession: orgProcedure
     .use(requirePermission({ order: ["take"] }))
-    .input(z.object({ tableSessionId: z.string().min(1), tableId: z.string().min(1) }))
+    .input(
+      z.object({
+        tableSessionId: z.string().min(1),
+        tableId: z.string().min(1),
+      }),
+    )
     .handler(async ({ context, input }) => {
       const session = await loadSessionInScope(context, input.tableSessionId);
       assertSessionUnsettled(session);
