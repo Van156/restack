@@ -16,6 +16,97 @@ import {
   loadSessionInScope,
   resolveActingMemberId,
 } from "./orders-shared";
+import type { OrderContext } from "./orders-shared";
+
+export const voidLineInput = z.object({
+  lineId: z.string().min(1),
+  reason: z.string().trim().min(1).max(200).optional(),
+  overrideId: z.string().min(1).optional(),
+  idempotencyKey,
+  actingToken: actingTokenInput,
+});
+export type VoidLineInput = z.infer<typeof voidLineInput>;
+
+/** Voids an Order line; a sent line needs an Override spent in the same transaction. Idempotent per key. */
+export async function voidLineCore(context: OrderContext, input: VoidLineInput) {
+  const { line, session } = await loadLineInScope(context, input.lineId);
+  const replay = await findVoidByKey(context, input.idempotencyKey, line.id);
+  if (replay) {
+    return replay;
+  }
+  assertSessionUnsettled(session);
+  const [alreadyVoided] = await context.db
+    .select({ id: schema.orderLineVoid.id })
+    .from(schema.orderLineVoid)
+    .where(eq(schema.orderLineVoid.orderLineId, line.id));
+  if (alreadyVoided) {
+    throw new ORPCError("CONFLICT", { message: "This line is already voided." });
+  }
+
+  const sent = await isLineSent(context, line.id);
+  if (sent && !input.overrideId) {
+    throw new ORPCError("FORBIDDEN", {
+      message: "Voiding a line already sent to the kitchen needs an Override.",
+    });
+  }
+  const memberId = await resolveActingMemberId(context, session.locationId, input.actingToken);
+
+  const { created, approverMemberId } = await context.db.transaction(async (tx) => {
+    const approver =
+      sent && input.overrideId
+        ? await consumeOverride(
+            { db: tx, clock: context.clock },
+            {
+              organizationId: context.org.id,
+              actorUserId: context.session.user.id,
+              overrideId: input.overrideId,
+              locationId: session.locationId,
+              action: "void_line",
+              target: line.id,
+            },
+          )
+        : null;
+    const [inserted] = await tx
+      .insert(schema.orderLineVoid)
+      .values({
+        organizationId: context.org.id,
+        orderLineId: line.id,
+        reason: input.reason ?? null,
+        overrideId: sent ? (input.overrideId ?? null) : null,
+        recordedByMemberId: memberId,
+        recordedAt: context.clock.now(),
+        idempotencyKey: input.idempotencyKey,
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (!inserted) {
+      // Already voided (another key, or a concurrent call): roll back the spent Override.
+      throw new ORPCError("CONFLICT", { message: "This line is already voided." });
+    }
+    return { created: inserted, approverMemberId: approver?.approverMemberId ?? null };
+  });
+
+  if (sent) {
+    await context.auditLogger.record({
+      scope: "organization",
+      organizationId: context.org.id,
+      actorUserId: context.session.user.id,
+      action: "order_line.voided",
+      targetType: "order_line",
+      targetId: line.id,
+      metadata: {
+        tableSessionId: session.id,
+        itemName: line.itemName,
+        quantity: line.quantity,
+        reason: input.reason ?? null,
+        overrideId: input.overrideId,
+        approverMemberId,
+        recordedByMemberId: memberId,
+      },
+    });
+  }
+  return created;
+}
 
 export const orderVoidsRouter = {
   /**
@@ -24,94 +115,8 @@ export const orderVoidsRouter = {
    */
   voidLine: orgProcedure
     .use(requirePermission({ order: ["take"] }))
-    .input(
-      z.object({
-        lineId: z.string().min(1),
-        reason: z.string().trim().min(1).max(200).optional(),
-        overrideId: z.string().min(1).optional(),
-        idempotencyKey,
-        actingToken: actingTokenInput,
-      }),
-    )
-    .handler(async ({ context, input }) => {
-      const { line, session } = await loadLineInScope(context, input.lineId);
-      const replay = await findVoidByKey(context, input.idempotencyKey, line.id);
-      if (replay) {
-        return replay;
-      }
-      assertSessionUnsettled(session);
-      const [alreadyVoided] = await context.db
-        .select({ id: schema.orderLineVoid.id })
-        .from(schema.orderLineVoid)
-        .where(eq(schema.orderLineVoid.orderLineId, line.id));
-      if (alreadyVoided) {
-        throw new ORPCError("CONFLICT", { message: "This line is already voided." });
-      }
-
-      const sent = await isLineSent(context, line.id);
-      if (sent && !input.overrideId) {
-        throw new ORPCError("FORBIDDEN", {
-          message: "Voiding a line already sent to the kitchen needs an Override.",
-        });
-      }
-      const memberId = await resolveActingMemberId(context, session.locationId, input.actingToken);
-
-      const { created, approverMemberId } = await context.db.transaction(async (tx) => {
-        const approver =
-          sent && input.overrideId
-            ? await consumeOverride(
-                { db: tx, clock: context.clock },
-                {
-                  organizationId: context.org.id,
-                  actorUserId: context.session.user.id,
-                  overrideId: input.overrideId,
-                  locationId: session.locationId,
-                  action: "void_line",
-                  target: line.id,
-                },
-              )
-            : null;
-        const [inserted] = await tx
-          .insert(schema.orderLineVoid)
-          .values({
-            organizationId: context.org.id,
-            orderLineId: line.id,
-            reason: input.reason ?? null,
-            overrideId: sent ? (input.overrideId ?? null) : null,
-            recordedByMemberId: memberId,
-            recordedAt: context.clock.now(),
-            idempotencyKey: input.idempotencyKey,
-          })
-          .onConflictDoNothing()
-          .returning();
-        if (!inserted) {
-          // Already voided (another key, or a concurrent call): roll back the spent Override.
-          throw new ORPCError("CONFLICT", { message: "This line is already voided." });
-        }
-        return { created: inserted, approverMemberId: approver?.approverMemberId ?? null };
-      });
-
-      if (sent) {
-        await context.auditLogger.record({
-          scope: "organization",
-          organizationId: context.org.id,
-          actorUserId: context.session.user.id,
-          action: "order_line.voided",
-          targetType: "order_line",
-          targetId: line.id,
-          metadata: {
-            tableSessionId: session.id,
-            itemName: line.itemName,
-            quantity: line.quantity,
-            reason: input.reason ?? null,
-            overrideId: input.overrideId,
-            approverMemberId,
-            recordedByMemberId: memberId,
-          },
-        });
-      }
-      return created;
-    }),
+    .input(voidLineInput)
+    .handler(({ context, input }) => voidLineCore(context, input)),
 
   /**
    * Applies a discount (amount or percent) to a Table session. Always needs an Override

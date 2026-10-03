@@ -12,47 +12,160 @@ import { consumeOverride } from "../../lib/override";
 import { hasOpenSessionAtTable } from "../../lib/table-session";
 import { loadChargeableSession, resolveChargingMemberId } from "./billing-shared";
 import { actingTokenInput, idempotencyKey } from "./orders-shared";
+import type { OrderContext } from "./orders-shared";
 import { orConflict } from "./setup-helpers";
 
-const paymentInput = z
-  .object({
-    tableSessionId: z.string().min(1),
-    tender: z.enum(PAYMENT_TENDERS),
-    /** What the payment covers of the Bill, in COP. */
-    amount: z.number().int().min(1),
-    /** Cash only: the amount handed over; the change is `tendered - amount`. */
-    tendered: z.number().int().optional(),
-    reference: z.string().trim().max(100).optional(),
-    registeredOffline: z.boolean().optional(),
-    /** Device time of the sale when it was recorded offline. */
-    clientRecordedAt: z.coerce.date().optional(),
-    idempotencyKey,
-    actingToken: actingTokenInput,
-  })
-  .superRefine((input, ctx) => {
-    if (input.tender === "cash") {
-      if (input.tendered !== undefined && input.tendered < input.amount) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["tendered"],
-          message: "The amount handed over cannot be less than the amount covered.",
-        });
-      }
-      return;
-    }
-    if (input.tendered !== undefined) {
-      ctx.addIssue({ code: "custom", path: ["tendered"], message: "Only cash records tendered." });
-    }
-    if (!input.reference) {
+export const paymentObject = z.object({
+  tableSessionId: z.string().min(1),
+  tender: z.enum(PAYMENT_TENDERS),
+  /** What the payment covers of the Bill, in COP. */
+  amount: z.number().int().min(1),
+  /** Cash only: the amount handed over; the change is `tendered - amount`. */
+  tendered: z.number().int().optional(),
+  reference: z.string().trim().max(100).optional(),
+  registeredOffline: z.boolean().optional(),
+  /** Device time of the sale when it was recorded offline. */
+  clientRecordedAt: z.coerce.date().optional(),
+  idempotencyKey,
+  actingToken: actingTokenInput,
+});
+
+/** Tender rules shared by the procedure and the sync record: cash change, references for card and QR. */
+export function refinePayment(
+  input: Pick<z.infer<typeof paymentObject>, "tender" | "amount" | "tendered" | "reference">,
+  ctx: z.RefinementCtx,
+) {
+  if (input.tender === "cash") {
+    if (input.tendered !== undefined && input.tendered < input.amount) {
       ctx.addIssue({
         code: "custom",
-        path: ["reference"],
-        message: "Card and QR/transfer payments need a reference.",
+        path: ["tendered"],
+        message: "The amount handed over cannot be less than the amount covered.",
       });
     }
-  });
+    return;
+  }
+  if (input.tendered !== undefined) {
+    ctx.addIssue({ code: "custom", path: ["tendered"], message: "Only cash records tendered." });
+  }
+  if (!input.reference) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["reference"],
+      message: "Card and QR/transfer payments need a reference.",
+    });
+  }
+}
+
+const paymentInput = paymentObject.superRefine(refinePayment);
+export type PaymentInput = z.infer<typeof paymentInput>;
 
 const sessionInput = z.object({ tableSessionId: z.string().min(1), actingToken: actingTokenInput });
+
+/** Records a payment on the Table session's Bill; idempotent per key, also after settling. */
+export async function recordPaymentCore(context: OrderContext, input: PaymentInput) {
+  const { session, location } = await loadChargeableSession(context, input.tableSessionId);
+  const memberId = await resolveChargingMemberId(context, location, input.actingToken);
+
+  const outcome = await context.db.transaction(async (tx) => {
+    const bill = await ensureBill(tx, session);
+    // Serializes concurrent payments on one Bill so none can overshoot the balance.
+    await lockBill(tx, bill.id);
+
+    const [replay] = await tx
+      .select()
+      .from(schema.payment)
+      .where(
+        and(
+          eq(schema.payment.organizationId, context.org.id),
+          eq(schema.payment.idempotencyKey, input.idempotencyKey),
+        ),
+      );
+    if (replay) {
+      if (replay.billId !== bill.id) {
+        throw new ORPCError("CONFLICT", { message: "This idempotency key was already used." });
+      }
+      return { payment: replay };
+    }
+
+    const view = await loadBillView(tx, session, location.suggestedTipPercent);
+    if (input.amount > view.balanceDue) {
+      throw new ORPCError("CONFLICT", {
+        message: `The payment exceeds what is due (${Math.max(view.balanceDue, 0)} COP).`,
+      });
+    }
+    // Shared lock: a concurrent close waits for this payment, so it lands in the counted ledger.
+    const openShift = await findOpenShift(tx, session.locationId, "share");
+    const [payment] = await tx
+      .insert(schema.payment)
+      .values({
+        organizationId: context.org.id,
+        locationId: session.locationId,
+        billId: bill.id,
+        cashShiftId: openShift?.id ?? null,
+        tender: input.tender,
+        amount: input.amount,
+        tendered: input.tender === "cash" ? (input.tendered ?? input.amount) : null,
+        reference: input.reference || null,
+        registeredOffline: input.registeredOffline ?? false,
+        recordedByMemberId: memberId,
+        clientRecordedAt: input.clientRecordedAt ?? null,
+        recordedAt: context.clock.now(),
+        idempotencyKey: input.idempotencyKey,
+      })
+      .returning();
+    return { payment: payment! };
+  });
+
+  const payment = outcome.payment;
+  return {
+    payment,
+    change: payment.tendered === null ? 0 : payment.tendered - payment.amount,
+    bill: await loadBillView(context.db, session, location.suggestedTipPercent),
+  };
+}
+
+/** Settles a fully paid Bill and its Table session; repeating it returns the settled Bill. */
+export async function settleCore(context: OrderContext, input: z.infer<typeof sessionInput>) {
+  const { session, location } = await loadChargeableSession(context, input.tableSessionId);
+  const memberId = await resolveChargingMemberId(context, location, input.actingToken);
+
+  return context.db.transaction(async (tx) => {
+    const bill = await ensureBill(tx, session);
+    await lockBill(tx, bill.id);
+    const [locked] = await tx.select().from(schema.bill).where(eq(schema.bill.id, bill.id));
+    const view = await loadBillView(tx, session, location.suggestedTipPercent);
+    if (locked!.status === "settled") {
+      return view;
+    }
+    if (view.lines.length === 0) {
+      throw new ORPCError("CONFLICT", { message: "There is nothing to charge on this Bill." });
+    }
+    if (view.balanceDue !== 0) {
+      throw new ORPCError("CONFLICT", {
+        message: `The Bill is not fully paid (balance ${view.balanceDue} COP).`,
+      });
+    }
+    const now = context.clock.now();
+    await tx
+      .update(schema.bill)
+      .set({
+        status: "settled",
+        base: view.base,
+        tax: view.tax,
+        discountTotal: view.discountTotal,
+        total: view.total,
+        settledAt: now,
+        settledByMemberId: memberId,
+      })
+      .where(eq(schema.bill.id, bill.id));
+    await tx
+      .update(schema.tableSession)
+      .set({ status: "settled", settledAt: now })
+      .where(eq(schema.tableSession.id, session.id));
+    return { ...view, status: "settled" as const, settledAt: now };
+  });
+}
 
 export const billPaymentsRouter = {
   /**
@@ -63,67 +176,7 @@ export const billPaymentsRouter = {
   recordPayment: orgProcedure
     .use(requirePermission({ billing: ["charge"] }))
     .input(paymentInput)
-    .handler(async ({ context, input }) => {
-      const { session, location } = await loadChargeableSession(context, input.tableSessionId);
-      const memberId = await resolveChargingMemberId(context, location, input.actingToken);
-
-      const outcome = await context.db.transaction(async (tx) => {
-        const bill = await ensureBill(tx, session);
-        // Serializes concurrent payments on one Bill so none can overshoot the balance.
-        await lockBill(tx, bill.id);
-
-        const [replay] = await tx
-          .select()
-          .from(schema.payment)
-          .where(
-            and(
-              eq(schema.payment.organizationId, context.org.id),
-              eq(schema.payment.idempotencyKey, input.idempotencyKey),
-            ),
-          );
-        if (replay) {
-          if (replay.billId !== bill.id) {
-            throw new ORPCError("CONFLICT", { message: "This idempotency key was already used." });
-          }
-          return { payment: replay };
-        }
-
-        const view = await loadBillView(tx, session, location.suggestedTipPercent);
-        if (input.amount > view.balanceDue) {
-          throw new ORPCError("CONFLICT", {
-            message: `The payment exceeds what is due (${Math.max(view.balanceDue, 0)} COP).`,
-          });
-        }
-        // Shared lock: a concurrent close waits for this payment, so it lands in the counted ledger.
-        const openShift = await findOpenShift(tx, session.locationId, "share");
-        const [payment] = await tx
-          .insert(schema.payment)
-          .values({
-            organizationId: context.org.id,
-            locationId: session.locationId,
-            billId: bill.id,
-            cashShiftId: openShift?.id ?? null,
-            tender: input.tender,
-            amount: input.amount,
-            tendered: input.tender === "cash" ? (input.tendered ?? input.amount) : null,
-            reference: input.reference || null,
-            registeredOffline: input.registeredOffline ?? false,
-            recordedByMemberId: memberId,
-            clientRecordedAt: input.clientRecordedAt ?? null,
-            recordedAt: context.clock.now(),
-            idempotencyKey: input.idempotencyKey,
-          })
-          .returning();
-        return { payment: payment! };
-      });
-
-      const payment = outcome.payment;
-      return {
-        payment,
-        change: payment.tendered === null ? 0 : payment.tendered - payment.amount,
-        bill: await loadBillView(context.db, session, location.suggestedTipPercent),
-      };
-    }),
+    .handler(({ context, input }) => recordPaymentCore(context, input)),
 
   /**
    * Settles a fully paid Bill: records the totals and settles the Table session, which frees the
@@ -132,46 +185,7 @@ export const billPaymentsRouter = {
   settle: orgProcedure
     .use(requirePermission({ billing: ["charge"] }))
     .input(sessionInput)
-    .handler(async ({ context, input }) => {
-      const { session, location } = await loadChargeableSession(context, input.tableSessionId);
-      const memberId = await resolveChargingMemberId(context, location, input.actingToken);
-
-      return context.db.transaction(async (tx) => {
-        const bill = await ensureBill(tx, session);
-        await lockBill(tx, bill.id);
-        const [locked] = await tx.select().from(schema.bill).where(eq(schema.bill.id, bill.id));
-        const view = await loadBillView(tx, session, location.suggestedTipPercent);
-        if (locked!.status === "settled") {
-          return view;
-        }
-        if (view.lines.length === 0) {
-          throw new ORPCError("CONFLICT", { message: "There is nothing to charge on this Bill." });
-        }
-        if (view.balanceDue !== 0) {
-          throw new ORPCError("CONFLICT", {
-            message: `The Bill is not fully paid (balance ${view.balanceDue} COP).`,
-          });
-        }
-        const now = context.clock.now();
-        await tx
-          .update(schema.bill)
-          .set({
-            status: "settled",
-            base: view.base,
-            tax: view.tax,
-            discountTotal: view.discountTotal,
-            total: view.total,
-            settledAt: now,
-            settledByMemberId: memberId,
-          })
-          .where(eq(schema.bill.id, bill.id));
-        await tx
-          .update(schema.tableSession)
-          .set({ status: "settled", settledAt: now })
-          .where(eq(schema.tableSession.id, session.id));
-        return { ...view, status: "settled" as const, settledAt: now };
-      });
-    }),
+    .handler(({ context, input }) => settleCore(context, input)),
 
   /**
    * Reopens a settled Bill. Always needs an Override (`reopen_bill`, target the Table session id)

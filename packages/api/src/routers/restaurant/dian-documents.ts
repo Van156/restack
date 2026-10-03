@@ -21,8 +21,9 @@ import { assertLocationAccess } from "../../lib/location-scope";
 import { loadChargeableSession, resolveChargingMemberId } from "./billing-shared";
 import { assertCanViewDian, findConnection } from "./dian-setup";
 import { actingTokenInput } from "./orders-shared";
+import type { OrderContext } from "./orders-shared";
 
-const issueInput = z.object({
+export const issueInput = z.object({
   tableSessionId: z.string().min(1),
   kind: z.enum(DIAN_DOCUMENT_KINDS).default("pos_equivalent"),
   /** Buyer from the directory; required for a factura, optional otherwise (consumidor final). */
@@ -33,7 +34,7 @@ const issueInput = z.object({
 });
 
 async function loadBuyer(
-  context: Context & { org: { id: string } },
+  context: Pick<OrderContext, "db" | "org">,
   buyerId: string,
 ): Promise<InvoiceBuyer> {
   const [row] = await context.db
@@ -52,11 +53,101 @@ async function loadBuyer(
   };
 }
 
-function requireInvoicing(context: Context) {
+function requireInvoicing(context: Pick<Context, "invoicing">) {
   if (!context.invoicing) {
     throw new ORPCError("SERVICE_UNAVAILABLE", { message: "No invoicing provider is configured." });
   }
   return context.invoicing;
+}
+
+export type IssueDocumentInput = z.infer<typeof issueInput>;
+
+/**
+ * Requests and transmits the DIAN document of a settled Bill (the shared core of `issueDocument`
+ * and the sync document request). The Bill snapshot carries the original sale time.
+ */
+export async function issueDocumentCore(
+  context: OrderContext & Pick<Context, "invoicing">,
+  input: IssueDocumentInput,
+) {
+  const { session, location } = await loadChargeableSession(context, input.tableSessionId);
+  await resolveChargingMemberId(context, location, input.actingToken);
+  const view = await loadBillView(context.db, session, location.suggestedTipPercent);
+  if (view.status !== "settled" || view.billId === null) {
+    throw new ORPCError("CONFLICT", {
+      message: "Settle the Bill before issuing its document.",
+    });
+  }
+  const billId = view.billId;
+
+  if (!location.dianEnabled) {
+    return {
+      kind: "exempt_receipt" as const,
+      note: EXEMPT_RECEIPT_NOTE,
+      lines: view.lines.map((line) => ({
+        name: line.itemName,
+        quantity: line.quantity,
+        total: line.total,
+      })),
+      total: view.total,
+      tip: view.tip,
+    };
+  }
+  if (!planAllowsDian(location, context.clock.now())) {
+    throw new ORPCError("FORBIDDEN", {
+      message: "DIAN documents are part of the Completo plan.",
+    });
+  }
+  const connection = await findConnection(context.db, location.id);
+  if (connection?.habilitacion !== "enabled") {
+    throw new ORPCError("PRECONDITION_FAILED", {
+      message: "Complete the DIAN habilitación before issuing documents.",
+    });
+  }
+  const invoicing = requireInvoicing(context);
+
+  if (input.kind === "factura" && !input.buyerId) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "A factura needs the buyer's identification.",
+    });
+  }
+  const buyer: InvoiceBuyer = input.buyerId
+    ? await loadBuyer(context, input.buyerId)
+    : { kind: "consumidor_final" };
+  const payload = buildDocumentPayload(view, {
+    kind: input.kind,
+    buyer,
+    contingency: input.contingency,
+  });
+
+  const outcome = await context.db.transaction(async (tx) => {
+    await lockBill(tx, billId);
+    return requestDocument(tx, {
+      organizationId: context.org.id,
+      locationId: location.id,
+      billId,
+      payload,
+      actorUserId: context.session.user.id,
+      now: context.clock.now(),
+    });
+  });
+  if (outcome.status === "conflict") {
+    throw new ORPCError("CONFLICT", {
+      message: "This Bill already has a document of another kind.",
+    });
+  }
+  const document =
+    outcome.status === "created"
+      ? ((await transmitDocument(
+          { db: context.db, invoicing, clock: context.clock },
+          outcome.document.id,
+        )) ?? outcome.document)
+      : outcome.document;
+  return {
+    kind: "document" as const,
+    document,
+    notes: documentNotes((document.payload as DocumentPayload).buyer),
+  };
 }
 
 export const dianDocumentsRouter = {
@@ -67,86 +158,7 @@ export const dianDocumentsRouter = {
   issueDocument: orgProcedure
     .use(requirePermission({ billing: ["charge"] }))
     .input(issueInput)
-    .handler(async ({ context, input }) => {
-      const { session, location } = await loadChargeableSession(context, input.tableSessionId);
-      await resolveChargingMemberId(context, location, input.actingToken);
-      const view = await loadBillView(context.db, session, location.suggestedTipPercent);
-      if (view.status !== "settled" || view.billId === null) {
-        throw new ORPCError("CONFLICT", {
-          message: "Settle the Bill before issuing its document.",
-        });
-      }
-      const billId = view.billId;
-
-      if (!location.dianEnabled) {
-        return {
-          kind: "exempt_receipt" as const,
-          note: EXEMPT_RECEIPT_NOTE,
-          lines: view.lines.map((line) => ({
-            name: line.itemName,
-            quantity: line.quantity,
-            total: line.total,
-          })),
-          total: view.total,
-          tip: view.tip,
-        };
-      }
-      if (!planAllowsDian(location, context.clock.now())) {
-        throw new ORPCError("FORBIDDEN", {
-          message: "DIAN documents are part of the Completo plan.",
-        });
-      }
-      const connection = await findConnection(context.db, location.id);
-      if (connection?.habilitacion !== "enabled") {
-        throw new ORPCError("PRECONDITION_FAILED", {
-          message: "Complete the DIAN habilitación before issuing documents.",
-        });
-      }
-      const invoicing = requireInvoicing(context);
-
-      if (input.kind === "factura" && !input.buyerId) {
-        throw new ORPCError("BAD_REQUEST", {
-          message: "A factura needs the buyer's identification.",
-        });
-      }
-      const buyer: InvoiceBuyer = input.buyerId
-        ? await loadBuyer(context, input.buyerId)
-        : { kind: "consumidor_final" };
-      const payload = buildDocumentPayload(view, {
-        kind: input.kind,
-        buyer,
-        contingency: input.contingency,
-      });
-
-      const outcome = await context.db.transaction(async (tx) => {
-        await lockBill(tx, billId);
-        return requestDocument(tx, {
-          organizationId: context.org.id,
-          locationId: location.id,
-          billId,
-          payload,
-          actorUserId: context.session.user.id,
-          now: context.clock.now(),
-        });
-      });
-      if (outcome.status === "conflict") {
-        throw new ORPCError("CONFLICT", {
-          message: "This Bill already has a document of another kind.",
-        });
-      }
-      const document =
-        outcome.status === "created"
-          ? ((await transmitDocument(
-              { db: context.db, invoicing, clock: context.clock },
-              outcome.document.id,
-            )) ?? outcome.document)
-          : outcome.document;
-      return {
-        kind: "document" as const,
-        document,
-        notes: documentNotes((document.payload as DocumentPayload).buyer),
-      };
-    }),
+    .handler(({ context, input }) => issueDocumentCore(context, input)),
 
   /** The documents of a Table session's Bill with their status, for the cashier. */
   getDocuments: orgProcedure
