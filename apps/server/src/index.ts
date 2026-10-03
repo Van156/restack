@@ -1,3 +1,5 @@
+import { systemClock } from "@base-template/api/clock";
+import { createRateLimiter } from "@base-template/api/lib/rate-limit";
 import { appRouter } from "@base-template/api/routers/index";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import { OpenAPIReferencePlugin } from "@orpc/openapi/plugins";
@@ -14,7 +16,8 @@ import { cors } from "hono/cors";
 import { createContext } from "./context";
 import { ENV } from "./env.server";
 import { createPublicRoutes } from "./public-routes";
-import { auth, startBackgroundJobs } from "./services";
+import { auth, db, startBackgroundJobs } from "./services";
+import { createWaiterCallRoutes } from "./waiter-call-routes";
 
 initLogger({
   env: { service: "base-template-server" },
@@ -45,6 +48,15 @@ app.use(
 
 app.on(["POST", "GET"], "/api/auth/*", async (c) => auth.handler(c.req.raw));
 app.route("/api/public", createPublicRoutes(ENV));
+app.route(
+  "/api/public/waiter-call",
+  createWaiterCallRoutes({
+    db,
+    clock: systemClock,
+    secret: ENV.BETTER_AUTH_SECRET,
+    rateLimiter: createRateLimiter(systemClock),
+  }),
+);
 
 export const apiHandler = new OpenAPIHandler(appRouter, {
   plugins: [
