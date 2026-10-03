@@ -10,6 +10,7 @@ import PageHeader from "@/shared/components/layout/page-header";
 import { useIsOwner } from "../hooks/use-is-owner";
 import { useLocationMutations } from "../hooks/use-location-mutations";
 import { useLocations } from "../hooks/use-locations";
+import { formatNit } from "../lib/nit";
 import {
   emptyLocationForm,
   validateLocationForm,
@@ -45,6 +46,7 @@ function LocationsContent() {
     setValues({
       name: location.name,
       address: location.address ?? "",
+      nit: location.nit ? formatNit(location.nit) : "",
       isFranchise: location.isFranchise,
       waitersCanCharge: location.waitersCanCharge,
       suggestedTipPercent: String(location.suggestedTipPercent),
@@ -64,13 +66,14 @@ function LocationsContent() {
       setErrors(result.errors);
       return;
     }
-    const { name, address, isFranchise, waitersCanCharge, suggestedTipPercent } = result.value;
+    const { name, address, nit, isFranchise, waitersCanCharge, suggestedTipPercent } = result.value;
     if (editing) {
       updateMutation.mutate(
         {
           locationId: editing.id,
           name,
           address: address || null,
+          nit,
           waitersCanCharge,
           suggestedTipPercent,
         },
@@ -82,6 +85,7 @@ function LocationsContent() {
       {
         name,
         address: address || undefined,
+        nit: nit ?? undefined,
         isFranchise,
         waitersCanCharge,
         suggestedTipPercent,

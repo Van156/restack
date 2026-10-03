@@ -5,4 +5,5 @@ export { default as LocationsPage } from "./components/locations-page";
 export { useActiveLocation } from "./hooks/use-active-location";
 export { useIsOwner } from "./hooks/use-is-owner";
 export { useLocations } from "./hooks/use-locations";
+export { formatNit } from "./lib/nit";
 export type { LocationView } from "./types";

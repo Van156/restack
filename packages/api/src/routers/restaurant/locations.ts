@@ -1,5 +1,6 @@
 import { hasOwnerRole } from "@base-template/auth/owner-role";
 import * as schema from "@base-template/db/schema";
+import { parseNit } from "@base-template/db/lib/nit";
 import { ORPCError } from "@orpc/server";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
@@ -14,9 +15,26 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** The legal ceiling for a suggested tip is 10 percent. */
 const tipPercent = z.number().int().min(0).max(10);
 
+/** Normalizes a typed NIT to its canonical form and checks its DV. */
+const nitField = z
+  .string()
+  .trim()
+  .transform((raw, ctx) => {
+    const parsed = parseNit(raw);
+    if (!parsed.ok) {
+      ctx.addIssue({
+        code: "custom",
+        message: parsed.reason === "check_digit" ? "Invalid NIT check digit." : "Invalid NIT.",
+      });
+      return z.NEVER;
+    }
+    return parsed.value;
+  });
+
 const createInput = z.object({
   name: z.string().trim().min(1).max(120),
   address: z.string().trim().max(240).optional(),
+  nit: nitField.optional(),
   isFranchise: z.boolean().optional(),
   waitersCanCharge: z.boolean().optional(),
   suggestedTipPercent: tipPercent.optional(),
@@ -26,6 +44,7 @@ const updateInput = z.object({
   locationId: z.string().min(1),
   name: z.string().trim().min(1).max(120).optional(),
   address: z.string().trim().max(240).nullable().optional(),
+  nit: nitField.nullable().optional(),
   isFranchise: z.boolean().optional(),
   waitersCanCharge: z.boolean().optional(),
   suggestedTipPercent: tipPercent.optional(),
@@ -63,6 +82,7 @@ export const locationsRouter = {
           organizationId: context.org.id,
           name: input.name,
           address: input.address,
+          nit: input.nit,
           isFranchise: input.isFranchise,
           waitersCanCharge: input.waitersCanCharge,
           suggestedTipPercent: input.suggestedTipPercent,

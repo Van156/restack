@@ -189,6 +189,75 @@ describe.skipIf(!reachable)("restaurant locations and staff assignment", () => {
     });
   });
 
+  describe("locations NIT", () => {
+    test("the Owner sets a NIT and it is stored in canonical form", async () => {
+      const updated = await call(
+        restaurantRouter.locations.update,
+        { locationId: seed.locations.a, nit: "800.197.268-4" },
+        { context: await as("owner") },
+      );
+      expect(updated.nit).toBe("800197268-4");
+    });
+
+    test("an Administrator of the Location sets it and null clears it", async () => {
+      await call(
+        restaurantRouter.locations.update,
+        { locationId: seed.locations.a, nit: "890903938-8" },
+        { context: await as("admin") },
+      );
+      const cleared = await call(
+        restaurantRouter.locations.update,
+        { locationId: seed.locations.a, nit: null },
+        { context: await as("admin") },
+      );
+      expect(cleared.nit).toBeNull();
+    });
+
+    test("a wrong check digit or malformed number is BAD_REQUEST", async () => {
+      for (const nit of ["800197268-5", "abc", "12"]) {
+        expect(
+          await codeOf(
+            call(
+              restaurantRouter.locations.update,
+              { locationId: seed.locations.a, nit },
+              { context: await as("owner") },
+            ),
+          ),
+        ).toBe("BAD_REQUEST");
+      }
+    });
+
+    test("a Cashier cannot set the NIT", async () => {
+      expect(
+        await codeOf(
+          call(
+            restaurantRouter.locations.update,
+            { locationId: seed.locations.a, nit: "800197268-4" },
+            { context: await as("cashierA") },
+          ),
+        ),
+      ).toBe("FORBIDDEN");
+    });
+
+    test("creating a Location accepts a NIT and the list exposes it to the Cashier", async () => {
+      const created = await call(
+        restaurantRouter.locations.create,
+        { name: "Sede Sur", nit: "8001972684" },
+        { context: await as("owner") },
+      );
+      expect(created.nit).toBe("800197268-4");
+      await call(
+        restaurantRouter.locations.update,
+        { locationId: seed.locations.a, nit: "800197268-4" },
+        { context: await as("owner") },
+      );
+      const listed = await call(restaurantRouter.locations.list, undefined, {
+        context: await as("cashierA"),
+      });
+      expect(listed.find((row) => row.id === seed.locations.a)?.nit).toBe("800197268-4");
+    });
+  });
+
   describe("staff.assignLocations", () => {
     test("the Owner assigns a Waiter to several Locations and it is audited", async () => {
       await call(

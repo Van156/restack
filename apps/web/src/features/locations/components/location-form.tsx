@@ -13,7 +13,7 @@ import SubmitButton from "@/shared/components/form/submit-button";
 
 import type { LocationFormErrors, LocationFormValues } from "../lib/location-form";
 
-/** Fields of a Location: name, address, franchise tax class, waiter charging and suggested tip. */
+/** Fields of a Location: name, address, NIT, franchise tax class, waiter charging and suggested tip. */
 export default function LocationForm({
   values,
   errors,
@@ -60,6 +60,21 @@ export default function LocationForm({
             value={values.address}
             onChange={(event) => onChange({ ...values, address: event.target.value })}
           />
+        </Field>
+        <Field data-invalid={errors.nit ? true : undefined}>
+          <FieldLabel htmlFor="location-nit">NIT</FieldLabel>
+          <Input
+            id="location-nit"
+            inputMode="numeric"
+            className="w-48"
+            value={values.nit}
+            aria-invalid={errors.nit ? true : undefined}
+            onChange={(event) => onChange({ ...values, nit: event.target.value })}
+          />
+          <FieldDescription>
+            Con dígito de verificación. Sale en los documentos y en el tiquete de contingencia.
+          </FieldDescription>
+          {errors.nit ? <FieldError errors={[{ message: errors.nit }]} /> : null}
         </Field>
         <Field data-invalid={errors.suggestedTipPercent ? true : undefined}>
           <FieldLabel htmlFor="location-tip">Propina sugerida (%)</FieldLabel>

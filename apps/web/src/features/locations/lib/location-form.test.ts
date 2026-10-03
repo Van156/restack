@@ -5,6 +5,7 @@ import { emptyLocationForm, validateLocationForm, type LocationFormValues } from
 const valid: LocationFormValues = {
   name: "  Sede Centro ",
   address: "Calle 10 # 5-20",
+  nit: "",
   isFranchise: false,
   waitersCanCharge: true,
   suggestedTipPercent: "10",
@@ -17,11 +18,27 @@ describe("validateLocationForm", () => {
       value: {
         name: "Sede Centro",
         address: "Calle 10 # 5-20",
+        nit: null,
         isFranchise: false,
         waitersCanCharge: true,
         suggestedTipPercent: 10,
       },
     });
+  });
+
+  test("canonicalizes a valid NIT and treats a blank one as none", () => {
+    const withNit = validateLocationForm({ ...valid, nit: " 800.197.268-4 " });
+    expect(withNit.ok && withNit.value.nit).toBe("800197268-4");
+  });
+
+  test("rejects a NIT with a wrong check digit or a bad format", () => {
+    for (const nit of ["800197268-5", "abc"]) {
+      const result = validateLocationForm({ ...valid, nit });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.errors.nit).toBeDefined();
+      }
+    }
   });
 
   test("requires a name", () => {

@@ -33,6 +33,8 @@ export const location = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     address: text("address"),
+    /** Canonical `body-dv` NIT printed on POS documents and the contingency ticket. */
+    nit: text("nit"),
     /** Franchise tax class applies IVA 19% instead of impoconsumo 8%. */
     isFranchise: boolean("is_franchise").default(false).notNull(),
     dianEnabled: boolean("dian_enabled").default(false).notNull(),
