@@ -1,5 +1,6 @@
 import { createBetterAuthAuthorization } from "@base-template/api/authorization";
 import { createBetterAuthPlatformAdmin } from "@base-template/api/platform-admin";
+import { createInvoicingProvider } from "@base-template/api/lib/invoicing/factory";
 import { createAuth } from "@base-template/auth";
 import type { AuditRetentionJobHandle } from "@base-template/auth/audit";
 import { createDrizzleAuditLogger, startAuditRetentionJob } from "@base-template/auth/audit";
@@ -11,6 +12,7 @@ import { ENV } from "./env.server";
 export const db = createDb(ENV);
 export const emailSender = createEmailSender(ENV);
 export const auditLogger = createDrizzleAuditLogger(db);
+export const invoicing = createInvoicingProvider(ENV);
 export const auth = createAuth(ENV, db, emailSender, auditLogger);
 export const authorization = createBetterAuthAuthorization(auth);
 export const platformAdmin = createBetterAuthPlatformAdmin(auth);

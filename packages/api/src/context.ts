@@ -4,6 +4,7 @@ import type { Database } from "@base-template/db";
 
 import type { AuthorizationPort } from "./authorization";
 import type { AuthenticatedDevice } from "./lib/device-auth";
+import type { InvoicingProvider } from "./lib/invoicing/types";
 import type { RateLimiter } from "./lib/rate-limit";
 import type { PlatformAdminPort } from "./platform-admin";
 
@@ -32,6 +33,8 @@ export type Context = {
   actingTokenSecret: string;
   /** Attempt limiter for public procedures; when absent they are not throttled. */
   rateLimiter?: RateLimiter;
+  /** Certified DIAN provider; when absent, issuing fails with an explicit error. */
+  invoicing?: InvoicingProvider;
   /** Paired device resolved from `Authorization: Device <token>`; only kitchen procedures read it. */
   device?: AuthenticatedDevice | null;
 };

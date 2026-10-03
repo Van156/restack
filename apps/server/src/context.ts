@@ -5,7 +5,7 @@ import type { Context as ApiContext } from "@base-template/api/context";
 import type { Context as HonoContext } from "hono";
 
 import { ENV } from "./env.server";
-import { auditLogger, auth, authorization, db, platformAdmin } from "./services";
+import { auditLogger, auth, authorization, db, invoicing, platformAdmin } from "./services";
 
 const rateLimiter = createRateLimiter(systemClock);
 
@@ -27,6 +27,7 @@ export async function createContext({ context }: CreateContextOptions): Promise<
     clock: systemClock,
     actingTokenSecret: ENV.BETTER_AUTH_SECRET,
     rateLimiter,
+    invoicing,
     device: await deviceFromHeaders(db, systemClock, headers),
   };
 }

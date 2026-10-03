@@ -15,6 +15,7 @@ import type { TestHelpers } from "better-auth/plugins";
 import { createBetterAuthAuthorization } from "../authorization";
 import type { Clock, Context } from "../context";
 import { deviceFromHeaders } from "../lib/device-auth";
+import { RecordingInvoicingProvider } from "../lib/invoicing/recording-provider";
 import { createRateLimiter } from "../lib/rate-limit";
 import { createBetterAuthPlatformAdmin } from "../platform-admin";
 
@@ -40,6 +41,8 @@ export type RestaurantHarness = {
   auditLogger: RecordingAuditLogger;
   /** Mutable test clock; `setNow` moves it. Starts at 2026-10-02T15:00:00Z. */
   clock: Clock & { setNow(date: Date): void };
+  /** Recording invoicing provider every context uses; `reset` clears it. */
+  invoicing: RecordingInvoicingProvider;
   /** Truncates every table and clears recorded audit events. */
   reset(): Promise<void>;
   /** Seeds one Restaurant organization with two Locations and one member of each Role. */
@@ -80,6 +83,7 @@ export async function createRestaurantHarness(): Promise<RestaurantHarness> {
   };
 
   const rateLimiter = createRateLimiter(clock);
+  const invoicing = new RecordingInvoicingProvider();
 
   async function createOrganization(id: string) {
     await handle.db.insert(schema.organization).values({ id, name: id, slug: id });
@@ -116,10 +120,12 @@ export async function createRestaurantHarness(): Promise<RestaurantHarness> {
     db: handle.db,
     auditLogger,
     clock,
+    invoicing,
     async reset() {
       await truncateAllTables(handle.db);
       auditLogger.reset();
       rateLimiter.reset();
+      invoicing.reset();
     },
     async seedRestaurant() {
       const organizationId = "resto";
@@ -161,6 +167,7 @@ export async function createRestaurantHarness(): Promise<RestaurantHarness> {
         clock,
         actingTokenSecret: TEST_ACTING_TOKEN_SECRET,
         rateLimiter,
+        invoicing,
       };
     },
     async contextForDevice(token) {
@@ -176,6 +183,7 @@ export async function createRestaurantHarness(): Promise<RestaurantHarness> {
         clock,
         actingTokenSecret: TEST_ACTING_TOKEN_SECRET,
         rateLimiter,
+        invoicing,
         device: await deviceFromHeaders(handle.db, clock, headers),
       };
     },
