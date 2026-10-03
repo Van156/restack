@@ -76,3 +76,21 @@ Procedures: `packages/api/src/routers/restaurant/billing*.ts`; schema `packages/
 - Settle needs at least one billed line and a balance of exactly zero; it settles the Table session, which frees the Table. Repeating it returns the settled Bill.
 - Reopen needs an Override (`reopen_bill`, target the Table session id) with no exemptions and is audited `bill.reopened`. The session returns to `bill_requested`; it is refused while the Table has a newer unsettled session. Payments stay on the Bill.
 - Buyer directory: restaurant-wide per organization, unique per document type and number. A buyer is saved only with `consent: true` (the consent time is recorded); saving the same document updates it. Procedures take a `locationId` for scope and the charge rule.
+
+## Invoicing
+
+Port, fake, factory and Alegra adapter: `packages/api/src/lib/invoicing/`. The port issues a document from a Bill snapshot, looks one up by idempotency key or provider reference, and reads the habilitación status. A transient failure throws `InvoicingTransientError`; a rejection is a normal result carrying the provider's reason.
+
+- `createInvoicingProvider(env)` picks Alegra when `ALEGRA_EMAIL` and `ALEGRA_TOKEN` are set (both or neither) and the recording fake outside production otherwise. Production refuses `INVOICING_PROVIDER=fake` at startup. Production without credentials still starts but returns a provider whose every call throws `InvoicingNotConfiguredError`, so issuing is disabled with an explicit error and nothing is ever faked.
+- The recording fake keeps every call, is deterministic (number `<prefix><n>`, reference `fake-<key>`), replays by key and can be scripted to reject, fail transiently or be unreachable.
+- Credentials are platform-level (env). The per-Location connection stores only the provider company reference, numbering prefix and habilitación status, never a token.
+
+### Alegra assumptions
+
+Verified in Alegra's reference: basic auth with email and token, `POST /invoices` on `https://api.alegra.com/api/v1`, the `stamp` object, and a 400 with an error `message` (and a draft invoice) when stamping fails. Assumed, to confirm against the sandbox with the contract test (`ALEGRA_SANDBOX_EMAIL`, `ALEGRA_SANDBOX_TOKEN`, optional `ALEGRA_SANDBOX_COMPANY` and `ALEGRA_SANDBOX_BASE_URL`; skipped when absent):
+
+- Inline items (`name`, `quantity`, `price`) instead of Alegra item ids, `numberTemplate.prefix` selecting the numbering, and `company` carrying the associated company.
+- The POS equivalent document goes through the same endpoint; its availability for associated companies is unconfirmed.
+- No native idempotency key: the key travels in `observations` as `restack:<key>` and `findDocument` searches `GET /invoices?query=`. The database unique per Bill and kind is the real guarantee.
+- Response fields `stamp.cufe`, `stamp.barCodeContent`, `numberTemplate.fullNumber`; habilitación from `GET /company` `electronicInvoicing.status`.
+- HTTP 5xx, 429, 408 and network failures are transient; other 4xx are rejections.
