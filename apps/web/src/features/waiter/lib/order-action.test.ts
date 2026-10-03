@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { runOnline, type OrderAction, type OrdersApi } from "./order-action";
+import { runOnline, serverIdOf, type OrderAction, type OrdersApi } from "./order-action";
 
 function fakeApi() {
   const calls: [string, unknown][] = [];
@@ -21,10 +21,21 @@ function fakeApi() {
   return { api, calls };
 }
 
+const session = { sessionId: "s1" };
+
+describe("serverIdOf", () => {
+  test("reads a server id and gives null for a queued key", () => {
+    expect(serverIdOf({ sessionId: "s1" })).toBe("s1");
+    expect(serverIdOf({ lineId: "l1" })).toBe("l1");
+    expect(serverIdOf({ sessionKey: "k" })).toBeNull();
+    expect(serverIdOf({ lineKey: "k" })).toBeNull();
+  });
+});
+
 describe("runOnline", () => {
   test("opens a session with the Location and the acting token", async () => {
     const { api, calls } = fakeApi();
-    await runOnline(api, "loc1", { type: "open_session", tableId: "t1" }, "tok");
+    await runOnline(api, "loc1", { type: "open_session", tableId: "t1", key: "k" }, "tok");
     expect(calls).toEqual([
       ["openSession", { locationId: "loc1", tableId: "t1", actingToken: "tok" }],
     ]);
@@ -34,7 +45,7 @@ describe("runOnline", () => {
     const { api, calls } = fakeApi();
     const action: OrderAction = {
       type: "add_line",
-      sessionId: "s1",
+      session,
       key: "k1",
       menuItemId: "m1",
       quantity: 2,
@@ -65,10 +76,10 @@ describe("runOnline", () => {
     await runOnline(
       api,
       "loc1",
-      { type: "void_line", line: { id: "l1" }, key: "k2", overrideId: "ov1" },
+      { type: "void_line", line: { lineId: "l1" }, key: "k2", overrideId: "ov1" },
       "tok",
     );
-    await runOnline(api, "loc1", { type: "remove_line", line: { id: "l2" }, key: "k3" }, "tok");
+    await runOnline(api, "loc1", { type: "remove_line", line: { lineId: "l2" }, key: "k3" }, "tok");
     expect(calls).toEqual([
       ["voidLine", { lineId: "l1", overrideId: "ov1", idempotencyKey: "k2", actingToken: "tok" }],
       ["removeLine", { lineId: "l2", idempotencyKey: "k3", actingToken: "tok" }],
@@ -77,13 +88,13 @@ describe("runOnline", () => {
 
   test("sends, moves, requests the bill and applies a discount on the session", async () => {
     const { api, calls } = fakeApi();
-    await runOnline(api, "loc1", { type: "send_to_kitchen", sessionId: "s1" }, "tok");
-    await runOnline(api, "loc1", { type: "move_session", sessionId: "s1", tableId: "t2" }, "tok");
-    await runOnline(api, "loc1", { type: "request_bill", sessionId: "s1" }, "tok");
+    await runOnline(api, "loc1", { type: "send_to_kitchen", session }, "tok");
+    await runOnline(api, "loc1", { type: "move_session", session, tableId: "t2", key: "m" }, "tok");
+    await runOnline(api, "loc1", { type: "request_bill", session }, "tok");
     await runOnline(
       api,
       "loc1",
-      { type: "discount", sessionId: "s1", kind: "percent", value: 10, overrideId: "ov2" },
+      { type: "discount", session, kind: "percent", value: 10, overrideId: "ov2" },
       "tok",
     );
     expect(calls.map(([name]) => name)).toEqual([

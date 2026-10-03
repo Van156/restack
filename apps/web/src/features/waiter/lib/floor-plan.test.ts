@@ -28,7 +28,7 @@ describe("buildFloorPlan", () => {
     const [salon] = buildFloorPlan({ areas, tables, sessions: [], calls: [], now });
     expect(salon?.tables[0]).toMatchObject({
       state: "free",
-      sessionId: null,
+      session: null,
       hasReadyTicket: false,
       waiterCallAgeMs: null,
     });
@@ -39,22 +39,32 @@ describe("buildFloorPlan", () => {
       areas,
       tables,
       sessions: [
-        { id: "s1", tableId: "t1", status: "open", hasReadyTicket: true },
-        { id: "s2", tableId: "t2", status: "bill_requested", hasReadyTicket: false },
+        { ref: { sessionId: "s1" }, tableId: "t1", status: "open", hasReadyTicket: true },
+        {
+          ref: { sessionId: "s2" },
+          tableId: "t2",
+          status: "bill_requested",
+          hasReadyTicket: false,
+        },
       ],
       calls: [],
       now,
     });
     expect(salon?.tables[0]).toMatchObject({
       state: "occupied",
-      sessionId: "s1",
+      session: { sessionId: "s1" },
       hasReadyTicket: true,
     });
-    expect(salon?.tables[1]).toMatchObject({ state: "bill_requested", sessionId: "s2" });
+    expect(salon?.tables[1]).toMatchObject({
+      state: "bill_requested",
+      session: { sessionId: "s2" },
+    });
   });
 
   test("shows the age of the oldest open call and ignores calls already on the way", () => {
-    const sessions = [{ id: "s1", tableId: "t1", status: "open" as const, hasReadyTicket: false }];
+    const sessions = [
+      { ref: { sessionId: "s1" }, tableId: "t1", status: "open" as const, hasReadyTicket: false },
+    ];
     const [salon] = buildFloorPlan({
       areas,
       tables,
@@ -88,7 +98,9 @@ describe("buildFloorPlan", () => {
     const [salon] = buildFloorPlan({
       areas,
       tables,
-      sessions: [{ id: "s1", tableId: "t1", status: "open", hasReadyTicket: false }],
+      sessions: [
+        { ref: { sessionId: "s1" }, tableId: "t1", status: "open", hasReadyTicket: false },
+      ],
       calls: [
         {
           id: "c1",
@@ -108,7 +120,9 @@ describe("buildFloorPlan with settled sessions", () => {
     const [salon] = buildFloorPlan({
       areas,
       tables,
-      sessions: [{ id: "s1", tableId: "t1", status: "settled", hasReadyTicket: false }],
+      sessions: [
+        { ref: { sessionId: "s1" }, tableId: "t1", status: "settled", hasReadyTicket: false },
+      ],
       calls: [],
       now,
     });

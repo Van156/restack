@@ -8,17 +8,18 @@ import {
 } from "@base-template/ui/components/dialog";
 import { useState } from "react";
 
+import { useActingMember } from "@/features/acting-member";
+import { useOfflineQueue } from "@/features/offline-queue";
+import { OverridePrompt } from "@/features/override-prompt";
 import Loader from "@/shared/components/feedback/loader";
 import LoadError from "@/shared/components/feedback/load-error";
-
-import { useActingMember } from "@/features/acting-member";
-import { OverridePrompt } from "@/features/override-prompt";
 
 import { useOrderActions } from "../hooks/use-order-actions";
 import { useMenu, useSessionDetail } from "../hooks/use-session-queries";
 import type { FloorPlanArea, FloorTile } from "../lib/floor-plan";
-import type { OrderViewLine } from "../lib/order-view";
-import { buildOrderView } from "../lib/order-view";
+import { serverIdOf } from "../lib/order-action";
+import { buildOrderView, type OrderViewLine } from "../lib/order-view";
+import { menuIndex, sessionKeysFor } from "../lib/queued-view";
 import DiscountDialog from "./discount-dialog";
 import LineComposerDialog, { type ComposedLine } from "./line-composer-dialog";
 import MenuPicker, { type MenuPickItem } from "./menu-picker";
@@ -31,10 +32,11 @@ type Panel =
   | { kind: "compose"; item: MenuPickItem }
   | { kind: "move" }
   | { kind: "void"; line: OrderViewLine }
+  | { kind: "authorize_void"; line: OrderViewLine }
   | { kind: "discount" }
   | { kind: "discount_override"; discount: { kind: "amount" | "percent"; value: number } };
 
-/** Container for one Table: opens the session, and runs the order actions of the Waiter. */
+/** Container for one Table: opens the session and runs the Waiter's order actions, online or queued. */
 export default function TableSessionPage({
   locationId,
   tile,
@@ -48,11 +50,14 @@ export default function TableSessionPage({
 }) {
   const { actingToken } = useActingMember(locationId);
   const actions = useOrderActions(locationId, actingToken);
+  const offline = useOfflineQueue();
   const [panel, setPanel] = useState<Panel>({ kind: "none" });
-  const detail = useSessionDetail(tile.sessionId);
+  const session = tile.session;
+  const sessionId = session ? serverIdOf(session) : null;
+  const detail = useSessionDetail(locationId, sessionId);
   const menu = useMenu(locationId);
 
-  if (tile.sessionId === null) {
+  if (session === null) {
     return (
       <div className="space-y-4">
         <Button type="button" variant="outline" size="sm" onClick={onBack}>
@@ -64,29 +69,39 @@ export default function TableSessionPage({
         <Button
           type="button"
           disabled={actions.isPending}
-          onClick={() => void actions.run({ type: "open_session", tableId: tile.tableId })}
+          onClick={() =>
+            void actions.run({
+              type: "open_session",
+              tableId: tile.tableId,
+              key: crypto.randomUUID(),
+            })
+          }
         >
           Abrir mesa
         </Button>
       </div>
     );
   }
-  if (detail.isPending || menu.isPending) {
-    return <Loader />;
-  }
-  if (!detail.data || !menu.data) {
+  if (!menu.data || (sessionId !== null && !detail.data)) {
+    if (menu.isPending || detail.isPending) {
+      return <Loader />;
+    }
     return (
       <LoadError
         message="No pudimos cargar la mesa."
         onRetry={() => {
-          void detail.refetch();
-          void menu.refetch();
+          detail.refetch();
+          menu.refetch();
         }}
       />
     );
   }
-  const sessionId = tile.sessionId;
-  const order = buildOrderView(detail.data.lines);
+  const order = buildOrderView(detail.data?.lines ?? [], {
+    records: offline.records,
+    sessionId,
+    sessionKeys: sessionKeysFor(session, tile.tableId, offline.records),
+    menu: menuIndex(menu.data),
+  });
 
   async function addLine(item: MenuPickItem, composed: ComposedLine) {
     const chosen = item.modifierGroups
@@ -94,7 +109,7 @@ export default function TableSessionPage({
       .filter((modifier) => composed.modifierIds.includes(modifier.id));
     const done = await actions.run({
       type: "add_line",
-      sessionId,
+      session: session!,
       key: crypto.randomUUID(),
       menuItemId: item.id,
       quantity: composed.quantity,
@@ -111,23 +126,33 @@ export default function TableSessionPage({
     }
   }
 
+  function voidLine(line: OrderViewLine) {
+    if (offline.online) {
+      setPanel({ kind: "void", line });
+      return;
+    }
+    void actions.run({ type: "void_line", line: line.ref, key: crypto.randomUUID() });
+  }
+
   return (
     <>
       <TableSessionView
         tableName={tile.name}
-        billRequested={detail.data.session.status === "bill_requested"}
+        billRequested={detail.data?.status === "bill_requested"}
         order={order}
         busy={actions.isPending}
+        online={offline.online}
         errorMessage={actions.errorMessage}
         onBack={onBack}
         onAddItem={() => setPanel({ kind: "menu" })}
-        onSend={() => void actions.run({ type: "send_to_kitchen", sessionId })}
-        onRequestBill={() => void actions.run({ type: "request_bill", sessionId })}
+        onSend={() => void actions.run({ type: "send_to_kitchen", session })}
+        onRequestBill={() => void actions.run({ type: "request_bill", session })}
         onMove={() => setPanel({ kind: "move" })}
         onRemoveLine={(line) =>
-          void actions.run({ type: "remove_line", line, key: crypto.randomUUID() })
+          void actions.run({ type: "remove_line", line: line.ref, key: crypto.randomUUID() })
         }
-        onVoidLine={(line) => setPanel({ kind: "void", line })}
+        onVoidLine={voidLine}
+        onAuthorizeVoid={(line) => setPanel({ kind: "authorize_void", line })}
         onDiscount={() => setPanel({ kind: "discount" })}
       />
       {panel.kind === "void" ? (
@@ -139,10 +164,24 @@ export default function TableSessionPage({
           onGranted={(overrideId) => {
             void actions.run({
               type: "void_line",
-              line: panel.line,
+              line: panel.line.ref,
               key: crypto.randomUUID(),
               overrideId,
             });
+            setPanel({ kind: "none" });
+          }}
+        />
+      ) : null}
+      {panel.kind === "authorize_void" ? (
+        <OverridePrompt
+          locationId={locationId}
+          action="void_line"
+          target={panel.line.id}
+          onCancel={() => setPanel({ kind: "none" })}
+          onGranted={(overrideId) => {
+            if (panel.line.voidKey) {
+              void offline.attachOverride(panel.line.voidKey, overrideId);
+            }
             setPanel({ kind: "none" });
           }}
         />
@@ -157,10 +196,10 @@ export default function TableSessionPage({
         <OverridePrompt
           locationId={locationId}
           action="discount"
-          target={sessionId}
+          target={sessionId ?? ""}
           onCancel={() => setPanel({ kind: "none" })}
           onGranted={(overrideId) => {
-            void actions.run({ type: "discount", sessionId, ...panel.discount, overrideId });
+            void actions.run({ type: "discount", session, ...panel.discount, overrideId });
             setPanel({ kind: "none" });
           }}
         />
@@ -192,8 +231,13 @@ export default function TableSessionPage({
           onCancel={() => setPanel({ kind: "none" })}
           onMove={(tableId) =>
             void actions
-              .run({ type: "move_session", sessionId, tableId })
-              .then((done) => (done ? setPanel({ kind: "none" }) : undefined))
+              .run({ type: "move_session", session, tableId, key: crypto.randomUUID() })
+              .then((done) => {
+                if (done) {
+                  setPanel({ kind: "none" });
+                  onBack();
+                }
+              })
           }
         />
       ) : null}

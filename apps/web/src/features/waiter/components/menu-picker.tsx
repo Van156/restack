@@ -2,17 +2,9 @@ import { Tabs, TabsList, TabsTrigger } from "@base-template/ui/components/tabs";
 import { formatCop } from "@base-template/ui/lib/format-cop";
 import { useState } from "react";
 
-import type { ComposerGroup } from "../lib/line-composer";
+import type { MenuPickCategory, MenuPickItem } from "../lib/menu-view";
 
-export type MenuPickItem = {
-  id: string;
-  name: string;
-  price: number;
-  active: boolean;
-  soldOut: boolean;
-  modifierGroups: ComposerGroup[];
-};
-export type MenuPickCategory = { id: string; name: string; items: MenuPickItem[] };
+export type { MenuPickCategory, MenuPickItem };
 
 /** Categories as tabs and their items as buttons; a sold-out item is shown but disabled. */
 export default function MenuPicker({

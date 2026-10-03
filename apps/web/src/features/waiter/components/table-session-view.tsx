@@ -4,12 +4,20 @@ import { formatCop } from "@base-template/ui/lib/format-cop";
 
 import type { OrderView, OrderViewLine } from "../lib/order-view";
 
+const PENDING_LABEL = {
+  none: "",
+  queued: " · Pendiente de enviar",
+  void_queued: " · Anulación pendiente de enviar",
+  void_needs_override: " · Falta la autorización para anular",
+} as const;
+
 /** One open Table: its order, the lines that can still change and the Waiter's actions. */
 export default function TableSessionView({
   tableName,
   billRequested,
   order,
   busy,
+  online,
   errorMessage,
   onBack,
   onAddItem,
@@ -18,12 +26,14 @@ export default function TableSessionView({
   onMove,
   onRemoveLine,
   onVoidLine,
+  onAuthorizeVoid,
   onDiscount,
 }: {
   tableName: string;
   billRequested: boolean;
   order: OrderView;
   busy: boolean;
+  online: boolean;
   errorMessage: string | null;
   onBack: () => void;
   onAddItem: () => void;
@@ -32,6 +42,7 @@ export default function TableSessionView({
   onMove: () => void;
   onRemoveLine: (line: OrderViewLine) => void;
   onVoidLine: (line: OrderViewLine) => void;
+  onAuthorizeVoid: (line: OrderViewLine) => void;
   onDiscount: () => void;
 }) {
   const changeable = order.lines.filter((line) => line.state !== "voided");
@@ -51,6 +62,11 @@ export default function TableSessionView({
           {errorMessage}
         </p>
       ) : null}
+      {online ? null : (
+        <p className="text-sm text-muted-foreground">
+          Sin conexión: enviar a cocina, pedir la cuenta y los descuentos necesitan internet.
+        </p>
+      )}
       <OrderStrip lines={order.lines} />
       {changeable.length > 0 ? (
         <section aria-label="Cambios por línea" className="space-y-2">
@@ -60,16 +76,30 @@ export default function TableSessionView({
               <li key={line.id} className="flex items-center justify-between gap-2 text-sm">
                 <span>
                   {line.quantity} × {line.name}
+                  {PENDING_LABEL[line.pending ?? "none"]}
                 </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => (line.state === "unsent" ? onRemoveLine(line) : onVoidLine(line))}
-                >
-                  {line.state === "unsent" ? "Quitar" : "Anular"} {line.name}
-                </Button>
+                {line.pending === "void_queued" ? null : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy || (line.pending === "void_needs_override" && !online)}
+                    onClick={() =>
+                      line.pending === "void_needs_override"
+                        ? onAuthorizeVoid(line)
+                        : line.state === "unsent"
+                          ? onRemoveLine(line)
+                          : onVoidLine(line)
+                    }
+                  >
+                    {line.pending === "void_needs_override"
+                      ? "Autorizar anulación de"
+                      : line.state === "unsent"
+                        ? "Quitar"
+                        : "Anular"}{" "}
+                    {line.name}
+                  </Button>
+                )}
               </li>
             ))}
           </ul>
@@ -80,19 +110,19 @@ export default function TableSessionView({
         <Button type="button" disabled={busy} onClick={onAddItem}>
           Agregar producto
         </Button>
-        <Button type="button" disabled={busy || !order.hasUnsent} onClick={onSend}>
+        <Button type="button" disabled={busy || !online || !order.hasUnsent} onClick={onSend}>
           Enviar a cocina
         </Button>
         <Button type="button" variant="outline" disabled={busy} onClick={onMove}>
           Mover de mesa
         </Button>
-        <Button type="button" variant="outline" disabled={busy} onClick={onDiscount}>
+        <Button type="button" variant="outline" disabled={busy || !online} onClick={onDiscount}>
           Pedir descuento
         </Button>
         <Button
           type="button"
           variant="outline"
-          disabled={busy || billRequested}
+          disabled={busy || !online || billRequested}
           onClick={onRequestBill}
         >
           Pedir la cuenta

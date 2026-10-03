@@ -23,7 +23,7 @@ const meta = {
             state: "free",
             hasReadyTicket: false,
             waiterCallAgeMs: null,
-            sessionId: null,
+            session: null,
           },
           {
             tableId: "t2",
@@ -32,7 +32,7 @@ const meta = {
             state: "occupied",
             hasReadyTicket: true,
             waiterCallAgeMs: null,
-            sessionId: "s2",
+            session: { sessionId: "s2" },
           },
           {
             tableId: "t3",
@@ -41,7 +41,7 @@ const meta = {
             state: "bill_requested",
             hasReadyTicket: false,
             waiterCallAgeMs: 95_000,
-            sessionId: "s3",
+            session: { sessionId: "s3" },
           },
         ],
       },

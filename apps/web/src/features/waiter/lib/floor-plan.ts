@@ -1,7 +1,9 @@
+import type { SessionRef } from "./order-action";
+
 export type FloorArea = { id: string; name: string };
 export type FloorTable = { id: string; areaId: string; name: string; seats: number };
 export type FloorSession = {
-  id: string;
+  ref: SessionRef;
   tableId: string;
   status: "open" | "bill_requested" | "settled";
   hasReadyTicket: boolean;
@@ -20,7 +22,7 @@ export type FloorTile = {
   state: "free" | "occupied" | "bill_requested";
   hasReadyTicket: boolean;
   waiterCallAgeMs: number | null;
-  sessionId: string | null;
+  session: SessionRef | null;
 };
 
 export type FloorPlanArea = { id: string; name: string; tables: FloorTile[] };
@@ -63,11 +65,14 @@ export function buildFloorPlan(input: {
           hasReadyTicket: session?.hasReadyTicket ?? false,
           waiterCallAgeMs: session
             ? oldestOpenCallAge(
-                input.calls.filter((call) => call.tableSessionId === session.id),
+                input.calls.filter(
+                  (call) =>
+                    "sessionId" in session.ref && call.tableSessionId === session.ref.sessionId,
+                ),
                 input.now,
               )
             : null,
-          sessionId: session?.id ?? null,
+          session: session?.ref ?? null,
         };
       }),
   }));

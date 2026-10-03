@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { describeOrderError } from "./order-errors";
+import { OfflineRequiredError } from "./order-gateway";
 
 const failure = (code: string, message: string) => Object.assign(new Error(message), { code });
 
@@ -27,6 +28,12 @@ describe("describeOrderError", () => {
     ).toBe("Ese producto se agotó.");
     expect(describeOrderError(failure("FORBIDDEN", "x"))).toBe(
       "No tienes permiso para hacer esto o tu sesión de PIN venció.",
+    );
+  });
+
+  test("an action that needs the server explains there is no connection", () => {
+    expect(describeOrderError(new OfflineRequiredError())).toBe(
+      "Sin conexión: esto necesita internet. Inténtalo cuando vuelva la conexión.",
     );
   });
 

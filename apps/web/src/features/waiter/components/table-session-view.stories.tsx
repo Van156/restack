@@ -11,6 +11,7 @@ const meta = {
     tableName: "3",
     billRequested: false,
     busy: false,
+    online: true,
     errorMessage: null,
     onBack: () => {},
     onAddItem: () => {},
@@ -19,6 +20,7 @@ const meta = {
     onMove: () => {},
     onRemoveLine: () => {},
     onVoidLine: () => {},
+    onAuthorizeVoid: () => {},
     onDiscount: () => {},
     order: {
       hasUnsent: true,
@@ -27,6 +29,8 @@ const meta = {
         {
           id: "l1",
           idempotencyKey: "k1",
+          ref: { lineId: "k1" },
+          pending: null,
           quantity: 2,
           name: "Bandeja paisa",
           modifiers: ["Sin chicharrón"],
@@ -37,6 +41,8 @@ const meta = {
         {
           id: "l2",
           idempotencyKey: "k2",
+          ref: { lineId: "k2" },
+          pending: null,
           quantity: 1,
           name: "Limonada",
           modifiers: [],
@@ -47,6 +53,8 @@ const meta = {
         {
           id: "l3",
           idempotencyKey: "k3",
+          ref: { lineId: "k3" },
+          pending: null,
           quantity: 1,
           name: "Postre",
           modifiers: [],
@@ -70,3 +78,5 @@ export const UnroutedError: Story = {
       "Estos productos no tienen estación en este local: Limonada. Pide a un administrador que los asigne.",
   },
 };
+
+export const Offline: Story = { args: { online: false } };

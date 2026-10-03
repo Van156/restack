@@ -1,8 +1,12 @@
-import { useState } from "react";
+import { OfflineBanner } from "@base-template/ui/components/offline-banner";
+import { Tabs, TabsList, TabsTrigger } from "@base-template/ui/components/tabs";
+import { useMemo, useState } from "react";
 
+import { authClient } from "@/app/auth-client";
 import { CanGate } from "@/features/access-control";
 import { ActingBar, ActingMemberProvider } from "@/features/acting-member";
 import { LocationScope, type LocationView } from "@/features/locations";
+import { OfflineQueueProvider, useOfflineQueue } from "@/features/offline-queue";
 import EmptyState from "@/shared/components/feedback/empty-state";
 import Loader from "@/shared/components/feedback/loader";
 import LoadError from "@/shared/components/feedback/load-error";
@@ -12,8 +16,10 @@ import { useRuntime } from "@/shared/hooks/use-runtime";
 import { useFloorFeed } from "../hooks/use-floor-feed";
 import { useFloorLayout } from "../hooks/use-floor-queries";
 import { buildFloorPlan } from "../lib/floor-plan";
-import type { WaiterSearch } from "../lib/waiter-search";
+import { overlayQueuedSessions } from "../lib/queued-view";
+import type { WaiterSearch, WaiterView } from "../lib/waiter-search";
 import FloorPlanView from "./floor-plan-view";
+import PendingPanel from "./pending-panel";
 import TableSessionPage from "./table-session-page";
 
 type PageProps = {
@@ -21,22 +27,73 @@ type PageProps = {
   onSearchChange: (search: WaiterSearch) => void;
 };
 
-/** Waiter surface (`order:take`): floor plan and Table sessions of the active Location. */
+const VIEWS = [
+  { view: "mesas", label: "Mesas" },
+  { view: "pendientes", label: "Pendientes" },
+] as const satisfies readonly { view: WaiterView; label: string }[];
+
+/** Waiter surface (`order:take`): floor plan, Table sessions and the offline queue of the active Location. */
 export default function WaiterPage({ search, onSearchChange }: PageProps) {
   return (
     <CanGate permission="order:take" message="No tienes permiso para tomar pedidos.">
       <PageHeader title="Mesas" description="Estado de las mesas de tu local." />
-      <ActingMemberProvider>
+      <WaiterProviders>
         <LocationScope>
           {(location) => (
             <div className="space-y-4">
+              <Connection />
               <ActingBar locationId={location.id} />
-              <FloorContent location={location} search={search} onSearchChange={onSearchChange} />
+              <WaiterViews location={location} search={search} onSearchChange={onSearchChange} />
             </div>
           )}
         </LocationScope>
-      </ActingMemberProvider>
+      </WaiterProviders>
     </CanGate>
+  );
+}
+
+function WaiterProviders({ children }: { children: React.ReactNode }) {
+  const { data: organization } = authClient.useActiveOrganization();
+  if (!organization) {
+    return <Loader />;
+  }
+  return (
+    <OfflineQueueProvider organizationId={organization.id}>
+      <ActingMemberProvider>{children}</ActingMemberProvider>
+    </OfflineQueueProvider>
+  );
+}
+
+/** The offline banner: silent while online. */
+function Connection() {
+  const { state } = useOfflineQueue();
+  return state.online ? null : <OfflineBanner status={state} />;
+}
+
+function WaiterViews({ location, search, onSearchChange }: PageProps & { location: LocationView }) {
+  const { records } = useOfflineQueue();
+  const pending = records.filter((record) => record.status !== "synced").length;
+  return (
+    <div className="space-y-4">
+      <Tabs
+        value={search.view}
+        onValueChange={(next) => onSearchChange({ view: next as WaiterView, table: undefined })}
+      >
+        <TabsList>
+          {VIEWS.map(({ view, label }) => (
+            <TabsTrigger key={view} value={view}>
+              {label}
+              {view === "pendientes" && pending > 0 ? ` (${pending})` : ""}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+      {search.view === "pendientes" ? (
+        <PendingPanel locationId={location.id} />
+      ) : (
+        <FloorContent location={location} search={search} onSearchChange={onSearchChange} />
+      )}
+    </div>
   );
 }
 
@@ -45,33 +102,30 @@ function FloorContent({
   search,
   onSearchChange,
 }: PageProps & { location: LocationView }) {
-  const { areas, tables } = useFloorLayout(location.id);
+  const { areas, tables, isPending, refetch } = useFloorLayout(location.id);
   const feed = useFloorFeed(location.id);
+  const { records } = useOfflineQueue();
   const { clock } = useRuntime();
   const [areaId, setAreaId] = useState("");
+  const sessions = useMemo(
+    () => overlayQueuedSessions(feed.sessions ?? [], records),
+    [feed.sessions, records],
+  );
 
-  if (areas.isPending || tables.isPending) {
+  if (isPending) {
     return <Loader />;
   }
-  if (!areas.data || !tables.data) {
-    return (
-      <LoadError
-        message="No pudimos cargar las mesas."
-        onRetry={() => {
-          void areas.refetch();
-          void tables.refetch();
-        }}
-      />
-    );
+  if (!areas || !tables) {
+    return <LoadError message="No pudimos cargar las mesas." onRetry={refetch} />;
   }
-  if (!feed.data) {
+  if (!feed.sessions) {
     return feed.error ? (
       <LoadError message="No pudimos cargar el estado de las mesas." />
     ) : (
       <Loader />
     );
   }
-  if (areas.data.length === 0) {
+  if (areas.length === 0) {
     return (
       <EmptyState
         title="Este local aún no tiene mesas"
@@ -80,10 +134,10 @@ function FloorContent({
     );
   }
   const plan = buildFloorPlan({
-    areas: areas.data,
-    tables: tables.data,
-    sessions: feed.data.sessions,
-    calls: feed.data.calls,
+    areas,
+    tables,
+    sessions,
+    calls: feed.calls,
     now: feed.receivedAt ?? clock.now(),
   });
   const openTile = plan

@@ -1,23 +1,45 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { authClient } from "@/app/auth-client";
 import { client } from "@/app/orpc";
+import { useOfflineQueue } from "@/features/offline-queue";
 
+import type { OrderAction } from "../lib/order-action";
 import { describeOrderError } from "../lib/order-errors";
-import { runOnline, type OrderAction } from "../lib/order-action";
+import { executeOrderAction } from "../lib/order-gateway";
 import { waiterQueryKey } from "./use-floor-queries";
 
-/** Runs order actions for a Location and refreshes the Waiter's data; the failure is kept as copy. */
+/**
+ * Runs order actions for a Location online, or queues them when offline, and refreshes the
+ * Waiter's data. A failure is kept as Spanish copy for the screen.
+ */
 export function useOrderActions(locationId: string, actingToken?: string) {
   const queryClient = useQueryClient();
   const { data: organization } = authClient.useActiveOrganization();
+  const offline = useOfflineQueue();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const mutation = useMutation({
     mutationFn: (action: OrderAction) =>
-      runOnline(client.restaurant.orders, locationId, action, actingToken),
+      executeOrderAction(
+        {
+          api: client.restaurant.orders,
+          locationId,
+          actingToken,
+          online: offline.online,
+          enqueue: offline.enqueue,
+          onRequest: offline.reportRequest,
+        },
+        action,
+      ),
     onMutate: () => setErrorMessage(null),
+    onSuccess: (result) => {
+      if (result === "queued") {
+        toast.info("Sin conexión: guardado en este dispositivo. Se envía al volver la conexión.");
+      }
+    },
     onError: (error) => setErrorMessage(describeOrderError(error)),
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: waiterQueryKey(organization?.id, "session") }),

@@ -1,12 +1,15 @@
 import type { AppRouterClient } from "@base-template/api/routers/index";
 
-import type { ServerLine } from "./order-view";
+/** A Table session by server id, or by the key of the `open_session` record that opened it offline. */
+export type SessionRef = { sessionId: string } | { sessionKey: string };
+/** An Order line by server id, or by the key of the queued `order_line` record that created it. */
+export type LineRef = { lineId: string } | { lineKey: string };
 
 export type OrderAction =
-  | { type: "open_session"; tableId: string }
+  | { type: "open_session"; tableId: string; key: string }
   | {
       type: "add_line";
-      sessionId: string;
+      session: SessionRef;
       key: string;
       menuItemId: string;
       quantity: number;
@@ -16,14 +19,14 @@ export type OrderAction =
       unitPrice: number;
       modifiers: { modifierId: string; priceDelta: number }[];
     }
-  | { type: "remove_line"; line: Pick<ServerLine, "id">; key: string }
-  | { type: "void_line"; line: Pick<ServerLine, "id">; key: string; overrideId: string }
-  | { type: "send_to_kitchen"; sessionId: string }
-  | { type: "move_session"; sessionId: string; tableId: string }
-  | { type: "request_bill"; sessionId: string }
+  | { type: "remove_line"; line: LineRef; key: string }
+  | { type: "void_line"; line: LineRef; key: string; overrideId?: string }
+  | { type: "send_to_kitchen"; session: SessionRef }
+  | { type: "move_session"; session: SessionRef; tableId: string; key: string }
+  | { type: "request_bill"; session: SessionRef }
   | {
       type: "discount";
-      sessionId: string;
+      session: SessionRef;
       kind: "amount" | "percent";
       value: number;
       overrideId: string;
@@ -41,7 +44,15 @@ export type OrdersApi = Pick<
   | "applyDiscount"
 >;
 
-/** Calls the procedure for an action, passing the acting token when someone switched in. */
+/** The server id of a session or line, which only exists once it has synced. */
+export function serverIdOf(ref: SessionRef | LineRef): string | null {
+  if ("sessionId" in ref) {
+    return ref.sessionId;
+  }
+  return "lineId" in ref ? ref.lineId : null;
+}
+
+/** Calls the procedure for an action; every ref must already be a server id. */
 export function runOnline(
   api: OrdersApi,
   locationId: string,
@@ -53,7 +64,7 @@ export function runOnline(
       return api.openSession({ locationId, tableId: action.tableId, actingToken });
     case "add_line":
       return api.addLine({
-        tableSessionId: action.sessionId,
+        tableSessionId: serverIdOf(action.session)!,
         menuItemId: action.menuItemId,
         quantity: action.quantity,
         modifierIds: action.modifierIds,
@@ -62,23 +73,30 @@ export function runOnline(
         actingToken,
       });
     case "remove_line":
-      return api.removeLine({ lineId: action.line.id, idempotencyKey: action.key, actingToken });
+      return api.removeLine({
+        lineId: serverIdOf(action.line)!,
+        idempotencyKey: action.key,
+        actingToken,
+      });
     case "void_line":
       return api.voidLine({
-        lineId: action.line.id,
+        lineId: serverIdOf(action.line)!,
         overrideId: action.overrideId,
         idempotencyKey: action.key,
         actingToken,
       });
     case "send_to_kitchen":
-      return api.sendToKitchen({ tableSessionId: action.sessionId, actingToken });
+      return api.sendToKitchen({ tableSessionId: serverIdOf(action.session)!, actingToken });
     case "move_session":
-      return api.moveSession({ tableSessionId: action.sessionId, tableId: action.tableId });
+      return api.moveSession({
+        tableSessionId: serverIdOf(action.session)!,
+        tableId: action.tableId,
+      });
     case "request_bill":
-      return api.requestBill({ tableSessionId: action.sessionId });
+      return api.requestBill({ tableSessionId: serverIdOf(action.session)! });
     case "discount":
       return api.applyDiscount({
-        tableSessionId: action.sessionId,
+        tableSessionId: serverIdOf(action.session)!,
         kind: action.kind,
         value: action.value,
         overrideId: action.overrideId,

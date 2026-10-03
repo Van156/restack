@@ -1,3 +1,5 @@
+import { OfflineRequiredError } from "./order-gateway";
+
 const UNROUTED = /^No Station at this Location prepares: (.+)\.$/;
 
 function field(error: unknown, name: "code" | "message"): string | undefined {
@@ -8,6 +10,9 @@ function field(error: unknown, name: "code" | "message"): string | undefined {
 
 /** Spanish copy for a failed order action; server messages are English and matched by shape. */
 export function describeOrderError(error: unknown): string {
+  if (error instanceof OfflineRequiredError) {
+    return "Sin conexión: esto necesita internet. Inténtalo cuando vuelva la conexión.";
+  }
   const code = field(error, "code");
   const message = field(error, "message") ?? "";
   const unrouted = UNROUTED.exec(message)?.[1];
