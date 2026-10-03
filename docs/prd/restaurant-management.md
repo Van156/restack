@@ -43,7 +43,7 @@ Market and competitor findings (COP per month, list prices, some extracted autom
 
 Gaps the MVP targets: nobody prices per Location; the DIAN POS document is table stakes but metered; entry tiers are thin (missing recipes, e-invoicing or restaurant workflow); only Loggro and Alegra claim offline. Toteat publishes no Colombian price and Poster lacks verified DIAN support.
 
-References: [competitors](../../.scratch/restaurant-management/issues/03-competitors-and-pricing.md) and [pain points](../../.scratch/restaurant-management/issues/04-small-restaurant-pain-points.md) tickets; research `docs/research/competitors.md` and `docs/research/pain-points.md` (section 13).
+References: `competitors` (`.scratch/restaurant-management/issues/03-competitors-and-pricing.md`) and `pain points` (`.scratch/restaurant-management/issues/04-small-restaurant-pain-points.md`) tickets; research `docs/research/competitors.md` and `docs/research/pain-points.md` (section 13).
 
 ## 3. Target customer and scope
 
