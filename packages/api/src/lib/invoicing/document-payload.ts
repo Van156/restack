@@ -1,3 +1,4 @@
+import { latestPaymentTime } from "../bill";
 import type { BillView } from "../bill";
 import type { DianDocumentKind, InvoiceBuyer, InvoiceLine, IssueDocumentInput } from "./types";
 
@@ -19,14 +20,6 @@ export type DocumentPayload = {
   total: number;
 };
 
-/** The sale time of a Bill: its latest payment, by device time when it was recorded offline. */
-export function saleTimeOf(payments: BillView["payments"]): Date {
-  const times = payments.map((payment) =>
-    (payment.clientRecordedAt ?? payment.recordedAt).getTime(),
-  );
-  return new Date(Math.max(...times));
-}
-
 /** Freezes a settled Bill into the payload an issue request carries. */
 export function buildDocumentPayload(
   view: BillView,
@@ -34,7 +27,8 @@ export function buildDocumentPayload(
 ): DocumentPayload {
   return {
     kind: options.kind,
-    saleTime: saleTimeOf(view.payments).toISOString(),
+    // The Bill's sale time is the one rule `settleTimeOf` stored when it settled.
+    saleTime: (view.settledAt ?? latestPaymentTime(view.payments) ?? new Date()).toISOString(),
     contingency: options.contingency,
     buyer: options.buyer,
     lines: view.lines.map((line) => ({
