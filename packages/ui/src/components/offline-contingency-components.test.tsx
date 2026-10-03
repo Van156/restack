@@ -104,6 +104,30 @@ describe("ContingencyTicket", () => {
     expect(html).not.toContain("<svg");
   });
 
+  test("shows the cashier and the Location when given", () => {
+    const html = plain(
+      renderToStaticMarkup(
+        <ContingencyTicket
+          {...props}
+          cashier="Ana Pérez"
+          location={{ name: "Sede Centro", address: "Cra 9 # 12-30" }}
+        />,
+      ),
+    );
+    expect(html).toContain("Local: Sede Centro");
+    expect(html).toContain("Cra 9 # 12-30");
+    expect(html).toContain("Cajero: Ana Pérez");
+  });
+
+  test("leaves out the cashier, the Location and the NIT when they are not known", () => {
+    const html = renderToStaticMarkup(
+      <ContingencyTicket {...props} restaurant={{ name: "La Fonda" }} />,
+    );
+    expect(html).not.toContain("Cajero");
+    expect(html).not.toContain("Local:");
+    expect(html).not.toContain("NIT");
+  });
+
   test("defaults the buyer to final consumer and shows a buyer when given", () => {
     expect(renderToStaticMarkup(<ContingencyTicket {...props} />)).toContain("Consumidor final");
     expect(

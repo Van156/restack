@@ -5,6 +5,8 @@ import {
   type QueueRecord,
   type QueuedAction,
   type RecordActor,
+  OfflineRequiredError,
+  OnlineSwitchInRequiredError,
   withActor,
 } from "@/features/offline-queue";
 
@@ -17,20 +19,6 @@ import {
   type SessionRef,
 } from "./order-action";
 import { isUnapplied } from "./queued-view";
-
-/** The action needs the server (bill, discount) and there is no connection. */
-export class OfflineRequiredError extends Error {
-  constructor() {
-    super("This action needs a connection.");
-  }
-}
-
-/** A discount is attributed through an acting token, which a member who entered the PIN offline lacks. */
-export class OnlineSwitchInRequiredError extends Error {
-  constructor() {
-    super("This action needs a PIN switch-in made online.");
-  }
-}
 
 const sessionPayload = (session: SessionRef) =>
   "sessionId" in session

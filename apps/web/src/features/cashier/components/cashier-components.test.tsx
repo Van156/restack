@@ -3,17 +3,23 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import AdjustmentsPanel from "./adjustments-panel";
 import BuyerPicker from "./buyer-picker";
-import { openBill, paidBill } from "./checkout-fixtures";
+import { openBill, paidBill } from "../lib/checkout-fixtures";
 import CheckoutRowsView from "./checkout-rows-view";
 import CheckoutView from "./checkout-view";
+import ContingencyTicketView from "./contingency-ticket-view";
 import DocumentChoiceForm from "./document-choice-form";
 import { DocumentResult, ExemptReceiptView } from "./document-result";
+import type { BuyerSummary, DocumentOptions } from "../lib/document-choice";
+import OfflineSaleSection from "./offline-sale-section";
 import PaymentForm from "./payment-form";
+import PendingChargesView from "./pending-charges-view";
 import TipStep from "./tip-step";
 
 const noop = () => {};
 
 const viewProps = {
+  settleQueued: false,
+  paymentsBlockedReason: null,
   tableName: "3",
   online: true,
   busy: false,
@@ -75,7 +81,7 @@ describe("TipStep", () => {
 describe("PaymentForm", () => {
   test("starts on cash with the balance and a field for the amount handed over", () => {
     const html = renderToStaticMarkup(
-      <PaymentForm balanceDue={48_200} busy={false} onSubmit={noop} />,
+      <PaymentForm balanceDue={48_200} busy={false} blockedReason={null} onSubmit={noop} />,
     );
     expect(html).toContain('value="48200"');
     expect(html).toContain("Efectivo recibido");
@@ -129,12 +135,12 @@ describe("CheckoutView", () => {
   });
 });
 
-const acme = {
+const acme: BuyerSummary = {
   id: "b1",
   documentType: "nit",
   documentNumber: "900123456",
   name: "Acme SAS",
-} as const;
+};
 
 describe("AdjustmentsPanel", () => {
   const props = {
@@ -202,7 +208,11 @@ describe("BuyerPicker", () => {
 
 describe("DocumentChoiceForm", () => {
   const props = {
-    options: { mode: "dian", kinds: ["pos_equivalent", "factura"], buyerSearch: true } as const,
+    options: {
+      mode: "dian",
+      kinds: ["pos_equivalent", "factura"],
+      buyerSearch: true,
+    } satisfies DocumentOptions as DocumentOptions,
     kind: "pos_equivalent" as const,
     buyer: null,
     buyerPicker: <p>PICKER</p>,
@@ -303,5 +313,108 @@ describe("DocumentResult", () => {
       />,
     );
     expect(html).toContain("Este documento no es una factura electrónica");
+  });
+});
+
+const ticket = {
+  restaurant: { name: "La Fonda" },
+  location: { name: "Sede Centro", address: "Cra 9 # 12-30" },
+  cashier: "Ana Pérez",
+  soldAt: new Date("2026-10-03T22:05:09Z"),
+  buyer: null,
+  lines: [{ id: "1", quantity: 1, name: "Bandeja", unitPrice: 26_000, total: 26_000 }],
+  taxes: [{ label: "Impoconsumo 8%", amount: 1_926 }],
+  total: 26_000,
+  tip: 0,
+  payments: [{ id: "p1", tender: "cash" as const, amount: 26_000 }],
+};
+
+describe("ContingencyTicketView", () => {
+  test("prints only the ticket and shows the cashier, the Location and the sale time", () => {
+    const html = renderToStaticMarkup(<ContingencyTicketView ticket={ticket} onPrint={noop} />);
+    expect(html).toContain("data-print-area");
+    expect(html).toContain("Cajero: Ana Pérez");
+    expect(html).toContain("Local: Sede Centro");
+    expect(html).toContain("registrado sin conexión");
+    expect(html).toContain("Imprimir tiquete");
+  });
+});
+
+describe("OfflineSaleSection", () => {
+  const props = {
+    dianEnabled: true,
+    documentQueued: false,
+    ticket,
+    busy: false,
+    blockedReason: null,
+    onRequestDocument: noop,
+    onPrint: noop,
+  };
+
+  test("asks for the contingency ticket first, then hands it over once requested", () => {
+    expect(renderToStaticMarkup(<OfflineSaleSection {...props} />)).toContain(
+      "Generar tiquete de contingencia",
+    );
+    const queued = renderToStaticMarkup(<OfflineSaleSection {...props} documentQueued />);
+    expect(queued).toContain("Imprimir tiquete");
+    expect(queued).toContain("48 horas");
+  });
+
+  test("the 48 hour block disables the request and says why", () => {
+    const html = renderToStaticMarkup(
+      <OfflineSaleSection {...props} blockedReason="Bloqueado por 48 horas" />,
+    );
+    expect(html).toContain("Bloqueado por 48 horas");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Generar tiquete/);
+  });
+
+  test("an exempt Location gets no contingency document", () => {
+    const html = renderToStaticMarkup(<OfflineSaleSection {...props} dianEnabled={false} />);
+    expect(html).not.toContain("Generar tiquete");
+    expect(html).toContain("no factura electrónicamente");
+  });
+});
+
+describe("PendingChargesView", () => {
+  const checklist = [
+    { id: "payments", label: "Cobros por enviar al servidor", count: 1, done: false },
+  ];
+  const rows = [
+    {
+      key: "p1",
+      kind: "payment" as const,
+      title: "Efectivo $ 20.000 · Mesa 3",
+      detail: "El pago supera el saldo pendiente.",
+      status: "rejected" as const,
+      saleTime: "2026-10-03T18:00:00.000Z",
+      canRetry: true,
+    },
+  ];
+
+  test("lists the outbox with status, reason and the original sale time, and a retry when online", () => {
+    const html = renderToStaticMarkup(
+      <PendingChargesView rows={rows} checklist={checklist} online onRetry={noop} />,
+    );
+    expect(html).toContain("Efectivo $ 20.000 · Mesa 3");
+    expect(html).toContain("Rechazado");
+    expect(html).toContain("El pago supera el saldo pendiente.");
+    expect(html).toContain("03/10/2026 13:00:00");
+    expect(html).toContain("Cobros por enviar al servidor");
+    expect(html).toContain("Reintentar");
+  });
+
+  test("retry waits for the connection", () => {
+    const html = renderToStaticMarkup(
+      <PendingChargesView rows={rows} checklist={checklist} online={false} onRetry={noop} />,
+    );
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Reintentar/);
+  });
+
+  test("says so when nothing is pending", () => {
+    expect(
+      renderToStaticMarkup(
+        <PendingChargesView rows={[]} checklist={checklist} online onRetry={noop} />,
+      ),
+    ).toContain("No hay cobros pendientes");
   });
 });

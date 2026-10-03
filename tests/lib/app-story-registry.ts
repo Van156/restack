@@ -69,4 +69,7 @@ export const APP_PRESENTATIONAL_COMPONENTS: readonly string[] = [
   "features/cashier/components/buyer-picker.tsx",
   "features/cashier/components/document-choice-form.tsx",
   "features/cashier/components/document-result.tsx",
+  "features/cashier/components/contingency-ticket-view.tsx",
+  "features/cashier/components/offline-sale-section.tsx",
+  "features/cashier/components/pending-charges-view.tsx",
 ];

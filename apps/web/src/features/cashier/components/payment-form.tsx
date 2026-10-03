@@ -35,10 +35,13 @@ function FieldError({ message }: { message?: string }) {
 export default function PaymentForm({
   balanceDue,
   busy,
+  blockedReason,
   onSubmit,
 }: {
   balanceDue: number;
   busy: boolean;
+  /** Why no payment can be recorded now (contingency block), or null. */
+  blockedReason: string | null;
   onSubmit: (payment: PaymentValues) => void;
 }) {
   const [draft, setDraft] = useState<PaymentDraft>(() => initialPaymentDraft(balanceDue));
@@ -109,12 +112,17 @@ export default function PaymentForm({
           </label>
         )}
       </div>
+      {blockedReason ? (
+        <p role="alert" className="text-sm text-destructive">
+          {blockedReason}
+        </p>
+      ) : null}
       {change > 0 ? (
         <p aria-live="polite" className="font-medium">
           Cambio: {formatCop(change)}
         </p>
       ) : null}
-      <Button type="button" disabled={busy} onClick={submit}>
+      <Button type="button" disabled={busy || blockedReason !== null} onClick={submit}>
         Registrar pago
       </Button>
     </section>

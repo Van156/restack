@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { ContingencyBlockedError } from "@/features/offline-queue";
+import {
+  ContingencyBlockedError,
+  OfflineRequiredError,
+  OnlineSwitchInRequiredError,
+} from "@/features/offline-queue";
 
 import { describeCheckoutError } from "./checkout-errors";
 
@@ -12,6 +16,13 @@ describe("describeCheckoutError", () => {
     expect(copy).toContain("48 horas");
     expect(copy).toContain("pedidos");
     expect(copy).toContain("cocina");
+  });
+
+  test("explains what needs a connection or a PIN entered online", () => {
+    expect(describeCheckoutError(new OfflineRequiredError())).toContain("necesita internet");
+    expect(describeCheckoutError(new OnlineSwitchInRequiredError())).toContain(
+      "cuando haya conexión",
+    );
   });
 
   test("maps the checkout refusals by their message", () => {

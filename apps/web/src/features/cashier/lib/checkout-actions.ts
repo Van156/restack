@@ -17,7 +17,14 @@ export type CheckoutAction =
       overrideId: string;
     }
   | { type: "void_line"; lineId: string; key: string; overrideId: string }
-  | { type: "issue_document"; sessionId: string; kind: DocumentKind; buyerId?: string }
+  | {
+      type: "issue_document";
+      sessionId: string;
+      kind: DocumentKind;
+      buyerId?: string;
+      /** ISO original sale time, kept when the request waits in the offline queue. */
+      saleTime?: string;
+    }
   | { type: "retry_document"; documentId: string; buyerId?: string };
 
 export type CheckoutApi = {

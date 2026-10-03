@@ -20,6 +20,8 @@ export default function CheckoutView({
   errorMessage,
   adjustments,
   documents,
+  settleQueued,
+  paymentsBlockedReason,
   onBack,
   onSetTip,
   onRemoveTip,
@@ -33,8 +35,12 @@ export default function CheckoutView({
   errorMessage: string | null;
   /** Discount, void and reopen controls, shown above the tip. */
   adjustments?: ReactNode;
-  /** Document choice and result, shown once the Bill is settled. */
+  /** Document step or the offline sale, shown below the payments when the container has one. */
   documents?: ReactNode;
+  /** The closing payment waits in the offline queue, so the Bill settles on sync. */
+  settleQueued: boolean;
+  /** Why payments cannot be recorded (48 h offline block), or null. */
+  paymentsBlockedReason: string | null;
   onBack: () => void;
   onSetTip: (amount: number) => void;
   onRemoveTip: () => void;
@@ -85,6 +91,7 @@ export default function CheckoutView({
           key={bill.balanceDue}
           balanceDue={bill.balanceDue}
           busy={busy}
+          blockedReason={paymentsBlockedReason}
           onSubmit={onPay}
         />
       ) : null}
@@ -94,12 +101,12 @@ export default function CheckoutView({
           dinero: ajusta la propina o pide a un Administrador revisar el cobro.
         </p>
       ) : null}
-      {settled ? null : (
+      {settled || settleQueued ? null : (
         <Button type="button" disabled={busy || !online || !canSettle(bill)} onClick={onSettle}>
           Cerrar la cuenta
         </Button>
       )}
-      {settled ? documents : null}
+      {documents}
     </div>
   );
 }

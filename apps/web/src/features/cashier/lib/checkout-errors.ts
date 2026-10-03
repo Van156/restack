@@ -1,4 +1,8 @@
-import { ContingencyBlockedError } from "@/features/offline-queue";
+import {
+  ContingencyBlockedError,
+  OfflineRequiredError,
+  OnlineSwitchInRequiredError,
+} from "@/features/offline-queue";
 
 function field(error: unknown, name: "code" | "message"): string {
   const value =
@@ -38,6 +42,12 @@ const BY_MESSAGE: readonly [prefix: string, copy: string][] = [
 export function describeCheckoutError(error: unknown): string {
   if (error instanceof ContingencyBlockedError) {
     return "Llevas más de 48 horas sin conexión: las ventas de contingencia están bloqueadas. Los pedidos y la cocina siguen funcionando; vuelve a conectarte para cobrar.";
+  }
+  if (error instanceof OfflineRequiredError) {
+    return "Sin conexión: esto necesita internet. Inténtalo cuando vuelva la conexión.";
+  }
+  if (error instanceof OnlineSwitchInRequiredError) {
+    return "Para esto entra con tu PIN cuando haya conexión.";
   }
   const message = field(error, "message");
   const known = BY_MESSAGE.find(([prefix]) => message.startsWith(prefix));

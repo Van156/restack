@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import type { EnqueueInput, QueueRecord } from "@/features/offline-queue";
-
 import {
   OfflineRequiredError,
   OnlineSwitchInRequiredError,
-  executeOrderAction,
-  toQueueInput,
-} from "./order-gateway";
+  type EnqueueInput,
+  type QueueRecord,
+} from "@/features/offline-queue";
+
+import { executeOrderAction, toQueueInput } from "./order-gateway";
 import type { OrderAction, OrdersApi } from "./order-action";
 
 const addLine: OrderAction = {

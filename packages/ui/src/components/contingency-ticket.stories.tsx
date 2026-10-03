@@ -44,3 +44,12 @@ export const SplitPayment: Story = {
 };
 
 export const WithoutNumber: Story = { args: { number: null } };
+
+export const WithCashierAndLocation: Story = {
+  args: {
+    cashier: "Ana Pérez",
+    location: { name: "Sede Centro", address: "Cra 9 # 12-30, Bogotá" },
+  },
+};
+
+export const WithoutNit: Story = { args: { restaurant: { name: "La Fonda del Centro" } } };

@@ -4,7 +4,11 @@ import { formatSaleTime } from "@base-template/ui/lib/sale-time";
 import { cn } from "@base-template/ui/lib/utils";
 
 type ContingencyTicketProps = {
-  restaurant: { name: string; nit: string; address?: string };
+  restaurant: { name: string; nit?: string; address?: string };
+  /** The Location that made the sale; its address replaces the Restaurant's when both are given. */
+  location?: { name: string; address?: string };
+  /** Who charged. */
+  cashier?: string;
   /** Document number when the Restaurant assigned one. */
   number?: string | null;
   /** Original sale time, kept even when the ticket is reprinted later. */
@@ -37,6 +41,8 @@ function Row({ label, amount, strong }: { label: string; amount: number; strong?
 /** Printable proof for a sale made offline: POS data without CUDE, QR or signature. */
 function ContingencyTicket({
   restaurant,
+  location,
+  cashier,
   number,
   soldAt,
   buyer,
@@ -58,14 +64,18 @@ function ContingencyTicket({
     >
       <header className="flex flex-col items-center text-center">
         <h2 className="text-sm font-semibold">{restaurant.name}</h2>
-        <p>NIT {restaurant.nit}</p>
-        {restaurant.address ? <p>{restaurant.address}</p> : null}
+        {restaurant.nit ? <p>NIT {restaurant.nit}</p> : null}
+        {location ? <p>Local: {location.name}</p> : null}
+        {(location?.address ?? restaurant.address) ? (
+          <p>{location?.address ?? restaurant.address}</p>
+        ) : null}
         <p className="mt-2 font-semibold uppercase">Tiquete de contingencia</p>
         {number ? <p>No. {number}</p> : null}
         <p>Fecha de la venta: {formatSaleTime(soldAt)}</p>
         <p className="font-semibold">registrado sin conexión</p>
       </header>
-      <p className="mt-2">
+      {cashier ? <p className="mt-2">Cajero: {cashier}</p> : null}
+      <p className={cashier ? undefined : "mt-2"}>
         Cliente: {buyer ? `${buyer.name} · ${buyer.documentNumber}` : "Consumidor final"}
       </p>
       <hr className="my-2 border-dashed border-black" />

@@ -1,4 +1,4 @@
-import { OfflineRequiredError, OnlineSwitchInRequiredError } from "./order-gateway";
+import { OfflineRequiredError, OnlineSwitchInRequiredError } from "@/features/offline-queue";
 import { unroutedCopy } from "./refusal-copy";
 
 function field(error: unknown, name: "code" | "message"): string | undefined {

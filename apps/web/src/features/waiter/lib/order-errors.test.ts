@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
+import { OfflineRequiredError, OnlineSwitchInRequiredError } from "@/features/offline-queue";
+
 import { describeOrderError } from "./order-errors";
-import { OfflineRequiredError, OnlineSwitchInRequiredError } from "./order-gateway";
 
 const failure = (code: string, message: string) => Object.assign(new Error(message), { code });
 

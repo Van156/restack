@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 
-import { openBill, paidBill } from "./checkout-fixtures";
+import { openBill, paidBill } from "../lib/checkout-fixtures";
 import CheckoutView from "./checkout-view";
 
 const meta = {
@@ -14,6 +14,8 @@ const meta = {
     online: true,
     busy: false,
     errorMessage: null,
+    settleQueued: false,
+    paymentsBlockedReason: null,
     onBack: () => {},
     onSetTip: () => {},
     onRemoveTip: () => {},
@@ -35,4 +37,34 @@ export const Offline: Story = { args: { online: false } };
 
 export const WithError: Story = {
   args: { errorMessage: "El pago supera el saldo pendiente." },
+};
+
+export const Blocked: Story = {
+  args: {
+    online: false,
+    paymentsBlockedReason:
+      "Llevas más de 48 horas sin conexión: las ventas de contingencia están bloqueadas.",
+  },
+};
+
+export const ChargedOffline: Story = {
+  args: {
+    online: false,
+    settleQueued: true,
+    bill: {
+      ...openBill,
+      balanceDue: 0,
+      payments: [
+        {
+          ...openBill.payments[0]!,
+          id: "q1",
+          amount: 68_200,
+          tendered: 70_000,
+          change: 1_800,
+          registeredOffline: true,
+          queued: true,
+        },
+      ],
+    },
+  },
 };
