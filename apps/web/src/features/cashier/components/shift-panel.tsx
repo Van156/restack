@@ -16,6 +16,7 @@ import {
 } from "../hooks/use-cash-shift";
 import { closeDifferences, type TenderAmounts } from "../lib/shift-form";
 import ClosedShiftSummary from "./closed-shift-summary";
+import ClosedShiftTips from "./closed-shift-tips";
 import CloseShiftForm from "./close-shift-form";
 import OpenShiftForm from "./open-shift-form";
 import ShiftLedgerView from "./shift-ledger-view";
@@ -83,7 +84,11 @@ function ShiftContent({ location }: { location: LocationView }) {
   if (!shiftId) {
     return (
       <div className="space-y-4">
-        {closed ? <ClosedShiftSummary expected={closed.expected} counted={closed.counted} /> : null}
+        {closed ? (
+          <ClosedShiftSummary expected={closed.expected} counted={closed.counted}>
+            <ClosedShiftTips locationId={location.id} shiftId={closed.shiftId} />
+          </ClosedShiftSummary>
+        ) : null}
         <OpenShiftForm
           busy={commands.busy}
           errorMessage={commands.errorMessage}

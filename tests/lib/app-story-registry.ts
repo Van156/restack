@@ -76,4 +76,8 @@ export const APP_PRESENTATIONAL_COMPONENTS: readonly string[] = [
   "features/cashier/components/shift-ledger-view.tsx",
   "features/cashier/components/close-shift-form.tsx",
   "features/cashier/components/closed-shift-summary.tsx",
+  "features/cashier/components/tip-shares-list.tsx",
+  "features/cashier/components/tip-distribution-result.tsx",
+  "features/cashier/components/tip-beneficiaries-form.tsx",
+  "features/cashier/components/tip-report-view.tsx",
 ];

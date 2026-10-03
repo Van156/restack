@@ -24,6 +24,7 @@ import CheckoutPage from "./checkout-page";
 import CheckoutRowsView from "./checkout-rows-view";
 import PendingChargesPanel from "./pending-charges-panel";
 import ShiftPanel from "./shift-panel";
+import TipsPanel from "./tips-panel";
 
 type PageProps = {
   search: CashierSearch;
@@ -35,6 +36,7 @@ const syncTransport = createSyncTransport(client.restaurant.sync);
 const VIEWS = [
   { view: "cuentas", label: "Cuentas" },
   { view: "turno", label: "Turno" },
+  { view: "propinas", label: "Propinas" },
   { view: "pendientes", label: "Pendientes" },
 ] as const satisfies readonly {
   view: CashierView;
@@ -110,6 +112,8 @@ function CashierViews({
         <PendingContent location={location} />
       ) : search.view === "turno" ? (
         <ShiftPanel location={location} />
+      ) : search.view === "propinas" ? (
+        <TipsPanel location={location} />
       ) : (
         <BillsContent location={location} search={search} onSearchChange={onSearchChange} />
       )}

@@ -17,6 +17,9 @@ import OpenShiftForm from "./open-shift-form";
 import PaymentForm from "./payment-form";
 import PendingChargesView from "./pending-charges-view";
 import ShiftLedgerView from "./shift-ledger-view";
+import TipBeneficiariesForm from "./tip-beneficiaries-form";
+import TipDistributionResult from "./tip-distribution-result";
+import TipReportView from "./tip-report-view";
 import TipStep from "./tip-step";
 
 const noop = () => {};
@@ -511,5 +514,136 @@ describe("ClosedShiftSummary", () => {
     expect(html).toContain("Faltan");
     expect(html).toContain("Cuadra");
     expect(html).toContain("Reparto aquí");
+  });
+});
+
+describe("TipDistributionResult", () => {
+  const props = { busy: false, errorMessage: null, onDistribute: noop };
+
+  test("shows each person's share and the total of the snapshot taken at close", () => {
+    const html = renderToStaticMarkup(
+      <TipDistributionResult
+        {...props}
+        distribution={{
+          tipTotal: 10_001,
+          shares: [
+            { key: "m1", displayName: "Ana Ruiz", amount: 5_001 },
+            { key: "name:Luis", displayName: "Luis", amount: 5_000 },
+          ],
+        }}
+      />,
+    );
+    expect(html).toContain("Ana Ruiz");
+    expect(html).toContain("Luis");
+    expect(html).toContain("Total de propinas");
+    expect(html).not.toContain("Repartir propinas");
+  });
+
+  test("when nobody could receive them it says so and offers to distribute", () => {
+    const html = renderToStaticMarkup(<TipDistributionResult {...props} distribution={null} />);
+    expect(html).toContain("aún no se repartieron");
+    expect(html).toContain("Repartir propinas");
+  });
+});
+
+describe("TipBeneficiariesForm", () => {
+  const form = {
+    mode: "equal" as const,
+    candidates: [{ memberId: "m2", displayName: "Beto" }],
+    drafts: [
+      { key: "m:m1", memberId: "m1", displayName: "Ana", sharePercent: "" },
+      { key: "n:1:Luis", memberId: null, displayName: "Luis", sharePercent: "" },
+    ],
+    readOnlyReason: null,
+    busy: false,
+    error: null,
+    onModeChange: noop,
+    onAddMember: noop,
+    onAddNamed: noop,
+    onRemove: noop,
+    onPercentChange: noop,
+    onSave: noop,
+  };
+
+  test("lists the people, marks those with no account and offers the rest of the Staff", () => {
+    const html = renderToStaticMarkup(<TipBeneficiariesForm {...form} />);
+    expect(html).toContain("Ana");
+    expect(html).toContain("Luis (sin cuenta)");
+    expect(html).toContain("Beto");
+    expect(html).not.toContain("Porcentaje de Ana");
+  });
+
+  test("in percent mode each person has a percent and the total shows what is left", () => {
+    const html = renderToStaticMarkup(
+      <TipBeneficiariesForm
+        {...form}
+        mode="percent"
+        drafts={form.drafts.map((draft, index) => ({
+          ...draft,
+          sharePercent: index === 0 ? "60" : "",
+        }))}
+      />,
+    );
+    expect(html).toContain("Porcentaje de Ana");
+    expect(html).toContain("Asignado 60% · faltan 40%");
+  });
+
+  test("a read-only form says why and disables saving", () => {
+    const html = renderToStaticMarkup(
+      <TipBeneficiariesForm {...form} readOnlyReason="Solo el propietario configura." />,
+    );
+    expect(html).toContain("Solo el propietario configura.");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Guardar beneficiarios/);
+  });
+});
+
+describe("TipReportView", () => {
+  const period = { from: "2026-10-01", to: "2026-10-03" };
+
+  test("shows each person's total and every distributed shift", () => {
+    const html = renderToStaticMarkup(
+      <TipReportView
+        period={period}
+        periodError={null}
+        onPeriodChange={noop}
+        report={{
+          total: 8_000,
+          people: [{ key: "m1", displayName: "Ana", amount: 8_000 }],
+          shifts: [
+            {
+              cashShiftId: "sh1",
+              closedAt: "2026-10-02T23:30:00.000Z",
+              tipTotal: 8_000,
+              shares: [{ key: "m1", displayName: "Ana", amount: 8_000 }],
+            },
+          ],
+        }}
+      />,
+    );
+    expect(html).toContain("Total por persona");
+    expect(html).toContain("Turno cerrado el 02/10/2026 18:30:00");
+  });
+
+  test("says so when the period has no distributed tips, and explains an invalid period", () => {
+    expect(
+      renderToStaticMarkup(
+        <TipReportView
+          period={period}
+          periodError={null}
+          onPeriodChange={noop}
+          report={{ shifts: [], people: [], total: 0 }}
+        />,
+      ),
+    ).toContain("No hay turnos con propinas repartidas");
+    expect(
+      renderToStaticMarkup(
+        <TipReportView
+          period={period}
+          periodError="La fecha final no puede ser anterior a la inicial."
+          onPeriodChange={noop}
+          report={null}
+        />,
+      ),
+    ).toContain("La fecha final no puede ser anterior a la inicial.");
   });
 });
