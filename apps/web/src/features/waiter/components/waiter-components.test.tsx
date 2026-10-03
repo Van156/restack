@@ -89,6 +89,16 @@ describe("TableSessionView", () => {
   const order = {
     lines: [
       {
+        id: "l0",
+        idempotencyKey: "k0",
+        quantity: 1,
+        name: "Jugo",
+        modifiers: [],
+        note: null,
+        state: "sent" as const,
+        total: 6_000,
+      },
+      {
         id: "l1",
         idempotencyKey: "k1",
         quantity: 2,
@@ -99,7 +109,7 @@ describe("TableSessionView", () => {
         total: 50_000,
       },
     ],
-    total: 50_000,
+    total: 56_000,
     hasUnsent: true,
   };
   const render = (overrides: { hasUnsent?: boolean; errorMessage?: string | null } = {}) =>
@@ -116,6 +126,8 @@ describe("TableSessionView", () => {
         onRequestBill={noop}
         onMove={noop}
         onRemoveLine={noop}
+        onVoidLine={noop}
+        onDiscount={noop}
       />,
     );
 
@@ -123,7 +135,8 @@ describe("TableSessionView", () => {
     const html = render();
     expect(html).toContain("Mesa 3");
     expect(html).toContain("Quitar Bandeja");
-    expect(html).toContain(`Total ${formatCop(50_000)}`);
+    expect(html).toContain("Anular Jugo");
+    expect(html).toContain(`Total ${formatCop(56_000)}`);
   });
 
   test("disables sending when nothing is unsent", () => {

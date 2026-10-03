@@ -17,6 +17,8 @@ export default function TableSessionView({
   onRequestBill,
   onMove,
   onRemoveLine,
+  onVoidLine,
+  onDiscount,
 }: {
   tableName: string;
   billRequested: boolean;
@@ -29,8 +31,10 @@ export default function TableSessionView({
   onRequestBill: () => void;
   onMove: () => void;
   onRemoveLine: (line: OrderViewLine) => void;
+  onVoidLine: (line: OrderViewLine) => void;
+  onDiscount: () => void;
 }) {
-  const unsent = order.lines.filter((line) => line.state === "unsent");
+  const changeable = order.lines.filter((line) => line.state !== "voided");
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
@@ -48,11 +52,11 @@ export default function TableSessionView({
         </p>
       ) : null}
       <OrderStrip lines={order.lines} />
-      {unsent.length > 0 ? (
-        <section aria-label="Líneas sin enviar" className="space-y-2">
-          <h3 className="text-sm font-medium">Sin enviar</h3>
+      {changeable.length > 0 ? (
+        <section aria-label="Cambios por línea" className="space-y-2">
+          <h3 className="text-sm font-medium">Quitar o anular</h3>
           <ul className="space-y-1">
-            {unsent.map((line) => (
+            {changeable.map((line) => (
               <li key={line.id} className="flex items-center justify-between gap-2 text-sm">
                 <span>
                   {line.quantity} × {line.name}
@@ -62,9 +66,9 @@ export default function TableSessionView({
                   variant="outline"
                   size="sm"
                   disabled={busy}
-                  onClick={() => onRemoveLine(line)}
+                  onClick={() => (line.state === "unsent" ? onRemoveLine(line) : onVoidLine(line))}
                 >
-                  Quitar {line.name}
+                  {line.state === "unsent" ? "Quitar" : "Anular"} {line.name}
                 </Button>
               </li>
             ))}
@@ -81,6 +85,9 @@ export default function TableSessionView({
         </Button>
         <Button type="button" variant="outline" disabled={busy} onClick={onMove}>
           Mover de mesa
+        </Button>
+        <Button type="button" variant="outline" disabled={busy} onClick={onDiscount}>
+          Pedir descuento
         </Button>
         <Button
           type="button"

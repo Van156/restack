@@ -18,6 +18,8 @@ const meta = {
     onRequestBill: () => {},
     onMove: () => {},
     onRemoveLine: () => {},
+    onVoidLine: () => {},
+    onDiscount: () => {},
     order: {
       hasUnsent: true,
       total: 68_000,

@@ -1,50 +1,50 @@
 import { useState } from "react";
 
 import { CanGate } from "@/features/access-control";
+import { ActingBar, ActingMemberProvider } from "@/features/acting-member";
 import { LocationScope, type LocationView } from "@/features/locations";
 import EmptyState from "@/shared/components/feedback/empty-state";
 import Loader from "@/shared/components/feedback/loader";
 import LoadError from "@/shared/components/feedback/load-error";
 import PageHeader from "@/shared/components/layout/page-header";
-
 import { useRuntime } from "@/shared/hooks/use-runtime";
 
 import { useFloorFeed } from "../hooks/use-floor-feed";
 import { useFloorLayout } from "../hooks/use-floor-queries";
 import { buildFloorPlan } from "../lib/floor-plan";
-import { type WaiterSearch } from "../lib/waiter-search";
+import type { WaiterSearch } from "../lib/waiter-search";
 import FloorPlanView from "./floor-plan-view";
 import TableSessionPage from "./table-session-page";
 
-/** Waiter surface (`order:take`): floor plan of the active Location. */
-export default function WaiterPage({
-  search,
-  onSearchChange,
-}: {
+type PageProps = {
   search: WaiterSearch;
   onSearchChange: (search: WaiterSearch) => void;
-}) {
+};
+
+/** Waiter surface (`order:take`): floor plan and Table sessions of the active Location. */
+export default function WaiterPage({ search, onSearchChange }: PageProps) {
   return (
     <CanGate permission="order:take" message="No tienes permiso para tomar pedidos.">
       <PageHeader title="Mesas" description="Estado de las mesas de tu local." />
-      <LocationScope>
-        {(location) => (
-          <WaiterLocation location={location} search={search} onSearchChange={onSearchChange} />
-        )}
-      </LocationScope>
+      <ActingMemberProvider>
+        <LocationScope>
+          {(location) => (
+            <div className="space-y-4">
+              <ActingBar locationId={location.id} />
+              <FloorContent location={location} search={search} onSearchChange={onSearchChange} />
+            </div>
+          )}
+        </LocationScope>
+      </ActingMemberProvider>
     </CanGate>
   );
 }
 
-function WaiterLocation({
+function FloorContent({
   location,
   search,
   onSearchChange,
-}: {
-  location: LocationView;
-  search: WaiterSearch;
-  onSearchChange: (search: WaiterSearch) => void;
-}) {
+}: PageProps & { location: LocationView }) {
   const { areas, tables } = useFloorLayout(location.id);
   const feed = useFloorFeed(location.id);
   const { clock } = useRuntime();

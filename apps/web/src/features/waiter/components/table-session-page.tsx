@@ -11,10 +11,15 @@ import { useState } from "react";
 import Loader from "@/shared/components/feedback/loader";
 import LoadError from "@/shared/components/feedback/load-error";
 
+import { useActingMember } from "@/features/acting-member";
+import { OverridePrompt } from "@/features/override-prompt";
+
 import { useOrderActions } from "../hooks/use-order-actions";
 import { useMenu, useSessionDetail } from "../hooks/use-session-queries";
 import type { FloorPlanArea, FloorTile } from "../lib/floor-plan";
+import type { OrderViewLine } from "../lib/order-view";
 import { buildOrderView } from "../lib/order-view";
+import DiscountDialog from "./discount-dialog";
 import LineComposerDialog, { type ComposedLine } from "./line-composer-dialog";
 import MenuPicker, { type MenuPickItem } from "./menu-picker";
 import MoveTableDialog from "./move-table-dialog";
@@ -24,7 +29,10 @@ type Panel =
   | { kind: "none" }
   | { kind: "menu" }
   | { kind: "compose"; item: MenuPickItem }
-  | { kind: "move" };
+  | { kind: "move" }
+  | { kind: "void"; line: OrderViewLine }
+  | { kind: "discount" }
+  | { kind: "discount_override"; discount: { kind: "amount" | "percent"; value: number } };
 
 /** Container for one Table: opens the session, and runs the order actions of the Waiter. */
 export default function TableSessionPage({
@@ -38,7 +46,8 @@ export default function TableSessionPage({
   plan: readonly FloorPlanArea[];
   onBack: () => void;
 }) {
-  const actions = useOrderActions(locationId);
+  const { actingToken } = useActingMember(locationId);
+  const actions = useOrderActions(locationId, actingToken);
   const [panel, setPanel] = useState<Panel>({ kind: "none" });
   const detail = useSessionDetail(tile.sessionId);
   const menu = useMenu(locationId);
@@ -118,7 +127,44 @@ export default function TableSessionPage({
         onRemoveLine={(line) =>
           void actions.run({ type: "remove_line", line, key: crypto.randomUUID() })
         }
+        onVoidLine={(line) => setPanel({ kind: "void", line })}
+        onDiscount={() => setPanel({ kind: "discount" })}
       />
+      {panel.kind === "void" ? (
+        <OverridePrompt
+          locationId={locationId}
+          action="void_line"
+          target={panel.line.id}
+          onCancel={() => setPanel({ kind: "none" })}
+          onGranted={(overrideId) => {
+            void actions.run({
+              type: "void_line",
+              line: panel.line,
+              key: crypto.randomUUID(),
+              overrideId,
+            });
+            setPanel({ kind: "none" });
+          }}
+        />
+      ) : null}
+      {panel.kind === "discount" ? (
+        <DiscountDialog
+          onCancel={() => setPanel({ kind: "none" })}
+          onSubmit={(discount) => setPanel({ kind: "discount_override", discount })}
+        />
+      ) : null}
+      {panel.kind === "discount_override" ? (
+        <OverridePrompt
+          locationId={locationId}
+          action="discount"
+          target={sessionId}
+          onCancel={() => setPanel({ kind: "none" })}
+          onGranted={(overrideId) => {
+            void actions.run({ type: "discount", sessionId, ...panel.discount, overrideId });
+            setPanel({ kind: "none" });
+          }}
+        />
+      ) : null}
       {panel.kind === "menu" ? (
         <Dialog open onOpenChange={(open) => (open ? undefined : setPanel({ kind: "none" }))}>
           <DialogContent>
