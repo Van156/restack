@@ -15,6 +15,7 @@ import type { Panel } from "../lib/table-panel";
 import LineComposerDialog, { type ComposedLine } from "./line-composer-dialog";
 import MenuPicker from "./menu-picker";
 import MoveTableDialog from "./move-table-dialog";
+import TableQrPanel from "./table-qr-panel";
 
 type Discount = { kind: "amount" | "percent"; value: number };
 
@@ -111,5 +112,9 @@ export default function TableSessionDialogs({
       );
     case "move":
       return <MoveTableDialog areas={plan} onCancel={onClose} onMove={onMove} />;
+    case "qr":
+      return sessionId === null ? null : (
+        <TableQrPanel sessionId={sessionId} tableName={tableName} onClose={onClose} />
+      );
   }
 }

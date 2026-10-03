@@ -7,6 +7,7 @@ export type Panel =
   | { kind: "menu" }
   | { kind: "compose"; item: MenuPickItem }
   | { kind: "move" }
+  | { kind: "qr" }
   | { kind: "void"; line: OrderViewLine }
   | { kind: "authorize_void"; line: OrderViewLine }
   | { kind: "discount" }

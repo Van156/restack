@@ -6,6 +6,7 @@ import { useTableCommands } from "../hooks/use-table-commands";
 import { useMenu, useSessionDetail } from "../hooks/use-session-queries";
 import type { FloorPlanArea, FloorTile } from "../lib/floor-plan";
 import { serverIdOf, type SessionRef } from "../lib/order-action";
+import { qrOfferState } from "../lib/table-qr";
 import { buildOrderView } from "../lib/order-view";
 import { menuIndex, sessionKeysFor } from "../lib/queued-view";
 import TableSessionDialogs from "./table-session-dialogs";
@@ -70,6 +71,8 @@ export default function OpenTablePage({
         onVoidLine={commands.voidLine}
         onAuthorizeVoid={(line) => commands.setPanel({ kind: "authorize_void", line })}
         onDiscount={() => commands.setPanel({ kind: "discount" })}
+        onShowQr={() => commands.setPanel({ kind: "qr" })}
+        qrOffer={qrOfferState({ online: commands.online, sessionId })}
       />
       <TableSessionDialogs
         panel={commands.panel}

@@ -22,6 +22,8 @@ const meta = {
     onVoidLine: () => {},
     onAuthorizeVoid: () => {},
     onDiscount: () => {},
+    onShowQr: () => {},
+    qrOffer: { enabled: true },
     order: {
       hasUnsent: true,
       total: 68_000,
@@ -79,4 +81,12 @@ export const UnroutedError: Story = {
   },
 };
 
-export const Offline: Story = { args: { online: false } };
+export const Offline: Story = {
+  args: {
+    online: false,
+    qrOffer: {
+      enabled: false,
+      reason: "El código QR necesita internet. Inténtalo cuando vuelva la conexión.",
+    },
+  },
+};

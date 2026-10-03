@@ -138,8 +138,14 @@ describe("TableSessionView", () => {
         onVoidLine={noop}
         onAuthorizeVoid={noop}
         onDiscount={noop}
+        onShowQr={noop}
+        qrOffer={{ enabled: true }}
       />,
     );
+
+  test("offers the Table QR for the guests", () => {
+    expect(render()).toMatch(/<button(?![^>]*data-disabled)[^>]*>Mostrar QR de la mesa/);
+  });
 
   test("shows the total and offers to remove an unsent line", () => {
     const html = render();
@@ -198,8 +204,15 @@ describe("TableSessionView offline", () => {
       onVoidLine={noop}
       onAuthorizeVoid={noop}
       onDiscount={noop}
+      onShowQr={noop}
+      qrOffer={{ enabled: false, reason: "El código QR necesita internet." }}
     />,
   );
+
+  test("the Table QR explains it needs internet and is disabled", () => {
+    expect(html).toMatch(/<button[^>]*data-disabled=""[^>]*>Mostrar QR de la mesa/);
+    expect(html).toContain("El código QR necesita internet.");
+  });
 
   test("explains what needs internet and disables it, but keeps adding products", () => {
     expect(html).toContain("Sin conexión");

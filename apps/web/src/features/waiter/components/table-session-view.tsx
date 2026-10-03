@@ -28,6 +28,8 @@ export default function TableSessionView({
   onVoidLine,
   onAuthorizeVoid,
   onDiscount,
+  onShowQr,
+  qrOffer,
 }: {
   tableName: string;
   billRequested: boolean;
@@ -44,6 +46,8 @@ export default function TableSessionView({
   onVoidLine: (line: OrderViewLine) => void;
   onAuthorizeVoid: (line: OrderViewLine) => void;
   onDiscount: () => void;
+  onShowQr: () => void;
+  qrOffer: { enabled: true } | { enabled: false; reason: string };
 }) {
   const changeable = order.lines.filter((line) => line.state !== "voided");
   return (
@@ -127,7 +131,16 @@ export default function TableSessionView({
         >
           Pedir la cuenta
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy || !qrOffer.enabled}
+          onClick={onShowQr}
+        >
+          Mostrar QR de la mesa
+        </Button>
       </div>
+      {qrOffer.enabled ? null : <p className="text-sm text-muted-foreground">{qrOffer.reason}</p>}
     </div>
   );
 }
