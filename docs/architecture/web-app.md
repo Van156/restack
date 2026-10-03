@@ -93,12 +93,14 @@ Impersonate and stop-impersonating go through better-auth's own client (`authCli
 | Route                   | Page                                                                  | Gate (UX only; the server re-checks)          |
 | ----------------------- | --------------------------------------------------------------------- | --------------------------------------------- |
 | `/restaurant/waiter`    | Waiter floor plan, Table sessions, calls, pending (`features/waiter`) | `order:take`                                  |
+| `/restaurant/kitchen`   | Kitchen board for Staff, on the active Location (`features/kitchen`)  | `order:take`                                  |
 | `/restaurant/locations` | Locations list and form (`features/locations`)                        | `setup:manage`; creating needs the Owner      |
 | `/restaurant/setup`     | Setup wizard, step in `?step=` (`features/setup`)                     | `setup:manage`                                |
 | `/restaurant/staff`     | Staff list, invite with Role and Locations, assign, reset PIN         | `staff:manage`; Owner row limited (see below) |
 | `/restaurant/devices`   | Paired devices: pair, rename, revoke (`features/devices`)             | `setup:manage`                                |
 | `/restaurant/pin`       | The caller's own PIN                                                  | none beyond membership                        |
 | `/activate`             | Public kitchen screen activation, under `_public-auth`, `?code=`      | none (no session)                             |
+| `/kitchen`              | Kitchen display of a Paired device (`features/kitchen`), top-level    | none (device token)                           |
 
 - **Active Location.** `useActiveLocation` resolves the Location a page works in: the one the user last picked (kept per organization in `localStorage`), else the first active one. Pages wrap their content in `LocationScope`, which shows the loader, retryable error or empty state and renders the picker. The Location list is already scoped server-side (the Owner sees all, everyone else their assignments).
 - **Query keys.** Restaurant queries use `orgQueryKey(organizationId, ...)` because switching organization does not clear the cache; setup writes invalidate the `["org", id, "setup"]` prefix.
@@ -106,6 +108,17 @@ Impersonate and stop-impersonating go through better-auth's own client (`authCli
 - **Staff.** The directory comes from better-auth members (`useOrgMemberDirectory`, capped at 500) joined with `staff.listAssignments`, which lists only Staff that have assignments in the caller's scope. Inviting is two calls: `inviteMember` (Role) then `staff.setInvitationLocations`; when the second fails the invitation exists, so the page offers a retry for the Locations instead of inviting again. The Owner row never offers Locations, and only the Owner can reset the Owner's PIN (`rowActions`).
 - **PIN entry.** The T13 `PinPad` takes the digits; `advancePinEntry` asks for the current PIN when changing, then the new PIN twice. No procedure says whether a member already has a PIN, so `/restaurant/pin` asks the person.
 - **Device activation.** See [restaurant.md](./restaurant.md#paired-devices) for where the device token is stored.
+
+## Kitchen pages
+
+`features/kitchen` has one board and two entry points; both are container-presentational (`KitchenBoard` owns the polling, `KitchenBoardView` renders).
+
+- **Device route `/kitchen`.** Top level (no auth layout, no shell, large-screen). `DeviceKitchenPage` reads the stored activation (`loadDeviceActivation`); none stored sends the screen to `/activate`. `createDeviceClient(token)` builds a dedicated oRPC client whose link sends `Authorization: Device <token>` (`deviceHeaders`) and `credentials: "omit"`, so nothing depends on a session cookie. Only `restaurant.kitchen.list` and `advance` accept a device. When either answers `UNAUTHORIZED` (revoked or unknown token) the activation is cleared and the screen explains it was unlinked, with a link to `/activate`.
+- **Staff route `/restaurant/kitchen`.** The same `KitchenBoard` over the session client for the active Location (every Station there; `order:take`).
+- **Source port.** `KitchenSource` (`{ list, advance }`) is what the board depends on; `useDeviceKitchenSource` and `useStaffKitchenSource` adapt the two clients, so the board never knows which credential it uses.
+- **Board.** `groupBoard` makes the four columns Nuevo, Preparando, Listo para entregar and Entregado (open columns oldest first, delivered most recent first); age comes from the poll's clock stamp. `kitchen.list` polls once per second through `createPollingTransport` and `useFeed`; the server already scopes a device to its Stations. The card is the `TicketCard` with the next step as its button (`advanceTarget`); a confirmed advance moves the card at once (`applyAdvances`) until the poll catches up, and a double tap is ignored while a call is in flight (the server also treats a repeated step as a no-op).
+- **Timing figures.** The device cannot call `kitchen.metrics` (it needs `report:read` and the server is not widened), so the strip above the columns is derived from the listed Tickets: count per open column and the age of the oldest Ticket not yet started. Preparation and pickup times stay in reports.
+- **Offline.** A failed poll opens an outage (`offlineStatus`); the last board stays, the `OfflineBanner` asks for orders out loud ("Pide las comandas en voz alta") and the advance buttons are replaced by a notice, because advancing needs a connection. The 24/40/48 h contingency states never show: orders and the kitchen are exempt from the 48 h block.
 
 ## Waiter pages
 
