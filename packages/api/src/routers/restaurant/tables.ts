@@ -161,13 +161,14 @@ export const tablesRouter = {
         }
       }
       const changes = definedFields({ name: input.name, seats: input.seats, areaId: input.areaId });
+      const writes = { ...changes, metadataWrittenAt: context.clock.now(), metadataWriteKey: null };
       if (Object.keys(changes).length === 0) {
         throw new ORPCError("BAD_REQUEST", { message: "Nothing to update." });
       }
       const [updated] = await orConflict(NAME_TAKEN, () =>
         context.db
           .update(schema.diningTable)
-          .set(changes)
+          .set(writes)
           .where(eq(schema.diningTable.id, table.id))
           .returning(),
       );

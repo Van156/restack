@@ -47,6 +47,7 @@ export async function voidLineCore(context: OrderContext, input: VoidLineInput) 
   if (sent && !input.overrideId) {
     throw new ORPCError("FORBIDDEN", {
       message: "Voiding a line already sent to the kitchen needs an Override.",
+      data: { reason: "override_required" },
     });
   }
   const memberId = await resolveActingMemberId(context, session.locationId, input.actingToken);

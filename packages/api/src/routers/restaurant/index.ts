@@ -13,6 +13,7 @@ import { reportsRouter } from "./reports";
 import { setupRouter } from "./setup";
 import { staffRouter } from "./staff";
 import { stationsRouter } from "./stations";
+import { syncRouter } from "./sync";
 import { tablesRouter } from "./tables";
 
 /**
@@ -36,4 +37,5 @@ export const restaurantRouter = {
   stations: stationsRouter,
   menu: menuRouter,
   setup: setupRouter,
+  sync: syncRouter,
 };

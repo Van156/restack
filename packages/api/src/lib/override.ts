@@ -47,6 +47,7 @@ export async function consumeOverride(
   if (!spent) {
     throw new ORPCError("FORBIDDEN", {
       message: "This Override is invalid, expired or already used.",
+      data: { reason: "override_invalid" },
     });
   }
 

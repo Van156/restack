@@ -66,6 +66,12 @@ export const diningTable = pgTable(
       .references(() => area.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     seats: integer("seats").notNull(),
+    /**
+     * Last-write-wins marker for Table metadata (name, seats, Area): the device time of the write
+     * that last changed it, and the sync key of that write (the tie-break). Null until a write.
+     */
+    metadataWrittenAt: timestamp("metadata_written_at", { withTimezone: true }),
+    metadataWriteKey: text("metadata_write_key"),
     createdAt: createdAt(),
   },
   (table) => [
