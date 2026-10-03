@@ -2,6 +2,11 @@
 
 - [`specs/`](./specs/): requirements and design decisions, written before or alongside a feature.
 - [`architecture/`](./architecture/): how the code implements them. Long rationale that does not fit in a code comment lives here.
+- [`prd/`](./prd/): product requirements for a feature set, handed off to specs and tickets.
+
+## PRDs
+
+- [Restaurant management MVP](./prd/restaurant-management.md)
 
 ## Specs
 
