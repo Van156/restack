@@ -56,4 +56,5 @@ export const APP_PRESENTATIONAL_COMPONENTS: readonly string[] = [
   "features/devices/components/pairing-code-card.tsx",
   "features/devices/components/device-list.tsx",
   "features/devices/components/activation-form.tsx",
+  "features/waiter/components/floor-plan-view.tsx",
 ];

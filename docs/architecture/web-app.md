@@ -90,14 +90,15 @@ Impersonate and stop-impersonating go through better-auth's own client (`authCli
 
 `routes/_auth/_org/restaurant/route.tsx` is the layout (`SectionNav` tabs from the `restaurant` group in `navGroups`). UI copy is Spanish; error messages that come from the server are shown verbatim and are still English.
 
-| Route                   | Page                                                             | Gate (UX only; the server re-checks)          |
-| ----------------------- | ---------------------------------------------------------------- | --------------------------------------------- |
-| `/restaurant/locations` | Locations list and form (`features/locations`)                   | `setup:manage`; creating needs the Owner      |
-| `/restaurant/setup`     | Setup wizard, step in `?step=` (`features/setup`)                | `setup:manage`                                |
-| `/restaurant/staff`     | Staff list, invite with Role and Locations, assign, reset PIN    | `staff:manage`; Owner row limited (see below) |
-| `/restaurant/devices`   | Paired devices: pair, rename, revoke (`features/devices`)        | `setup:manage`                                |
-| `/restaurant/pin`       | The caller's own PIN                                             | none beyond membership                        |
-| `/activate`             | Public kitchen screen activation, under `_public-auth`, `?code=` | none (no session)                             |
+| Route                   | Page                                                                  | Gate (UX only; the server re-checks)          |
+| ----------------------- | --------------------------------------------------------------------- | --------------------------------------------- |
+| `/restaurant/waiter`    | Waiter floor plan, Table sessions, calls, pending (`features/waiter`) | `order:take`                                  |
+| `/restaurant/locations` | Locations list and form (`features/locations`)                        | `setup:manage`; creating needs the Owner      |
+| `/restaurant/setup`     | Setup wizard, step in `?step=` (`features/setup`)                     | `setup:manage`                                |
+| `/restaurant/staff`     | Staff list, invite with Role and Locations, assign, reset PIN         | `staff:manage`; Owner row limited (see below) |
+| `/restaurant/devices`   | Paired devices: pair, rename, revoke (`features/devices`)             | `setup:manage`                                |
+| `/restaurant/pin`       | The caller's own PIN                                                  | none beyond membership                        |
+| `/activate`             | Public kitchen screen activation, under `_public-auth`, `?code=`      | none (no session)                             |
 
 - **Active Location.** `useActiveLocation` resolves the Location a page works in: the one the user last picked (kept per organization in `localStorage`), else the first active one. Pages wrap their content in `LocationScope`, which shows the loader, retryable error or empty state and renders the picker. The Location list is already scoped server-side (the Owner sees all, everyone else their assignments).
 - **Query keys.** Restaurant queries use `orgQueryKey(organizationId, ...)` because switching organization does not clear the cache; setup writes invalidate the `["org", id, "setup"]` prefix.
@@ -105,6 +106,13 @@ Impersonate and stop-impersonating go through better-auth's own client (`authCli
 - **Staff.** The directory comes from better-auth members (`useOrgMemberDirectory`, capped at 500) joined with `staff.listAssignments`, which lists only Staff that have assignments in the caller's scope. Inviting is two calls: `inviteMember` (Role) then `staff.setInvitationLocations`; when the second fails the invitation exists, so the page offers a retry for the Locations instead of inviting again. The Owner row never offers Locations, and only the Owner can reset the Owner's PIN (`rowActions`).
 - **PIN entry.** The T13 `PinPad` takes the digits; `advancePinEntry` asks for the current PIN when changing, then the new PIN twice. No procedure says whether a member already has a PIN, so `/restaurant/pin` asks the person.
 - **Device activation.** See [restaurant.md](./restaurant.md#paired-devices) for where the device token is stored.
+
+## Waiter pages
+
+`/restaurant/waiter` (`features/waiter`) is the phone-first surface. The view (`?view=mesas|llamadas|pendientes`) and the open Table (`?table=`) live in the URL.
+
+- **Polling behind a transport.** `shared/lib/polling.ts` defines `FeedTransport<T>` (`subscribe(listener)`) and `createPollingTransport({ fetch, intervalMs, timer, clock })`: one round per interval, rounds never overlap, a failed round is reported and polling goes on. `useFeed(transport)` (`shared/hooks/use-feed.ts`) subscribes for the life of a component. The clock and timer come from `useRuntime()` (`shared/hooks/use-runtime.tsx`, defaults to the system clock and `setTimeout`), so tests and stories inject their own. A realtime transport would implement `FeedTransport` and replace `createPollingTransport` in the hook. T16 and T17 import these.
+- **Floor plan.** `useFloorFeed` polls `orders.listOpenSessions` and `waiterCall.list` every second; Areas and Tables come from regular queries (they change rarely). `buildFloorPlan` merges them into one tile per Table: free, occupied or bill requested, the ready marker, and the age of the oldest call still waiting for a Waiter (a call already on the way shows no age). The age uses the clock stamp of the poll, so it advances once per second without a timer of its own.
 
 ## Audit log pages
 

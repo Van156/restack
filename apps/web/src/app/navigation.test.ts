@@ -27,6 +27,7 @@ describe("getSectionItems", () => {
 
   test("derives the restaurant tabs from the sidebar config, in order", () => {
     expect(getSectionItems("restaurant", member).map((item) => item.label)).toEqual([
+      "Mesas",
       "Locales",
       "Configuración",
       "Equipo",
