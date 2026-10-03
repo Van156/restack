@@ -73,7 +73,9 @@ function LocationWizard({
           {step === "areas" ? <AreasStep locationId={location.id} /> : null}
           {step === "tables" ? <TablesStep locationId={location.id} /> : null}
           {step === "stations" ? <StationsStep locationId={location.id} /> : null}
-          {step === "menu" ? <MenuStep locationId={location.id} /> : null}
+          {step === "menu" ? (
+            <MenuStep locationId={location.id} locationName={location.name} />
+          ) : null}
           {step === "review" ? (
             <ReviewStep locationId={location.id} onGoToStep={onStepChange} />
           ) : null}

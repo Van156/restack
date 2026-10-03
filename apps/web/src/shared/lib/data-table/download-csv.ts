@@ -40,6 +40,17 @@ function browserEnv(): CsvDownloadEnv {
   };
 }
 
+/** Downloads ready-made CSV text (BOM added) as `filename`, with the same deferred revoke. */
+export function downloadCsvText(
+  csv: string,
+  filename: string,
+  env: CsvDownloadEnv = browserEnv(),
+): void {
+  const url = env.createObjectURL(new Blob([CSV_BOM, csv], { type: "text/csv;charset=utf-8" }));
+  env.trigger(url, filename);
+  env.schedule(() => env.revokeObjectURL(url));
+}
+
 /**
  * Downloads `rows` as a CSV file named `filename`. Revoking the object URL right after the click
  * can cancel the download in some browsers, so it is deferred through `env.schedule`.

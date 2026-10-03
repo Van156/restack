@@ -50,4 +50,5 @@ export const APP_PRESENTATIONAL_COMPONENTS: readonly string[] = [
   "features/setup/components/setup-stepper.tsx",
   "features/setup/components/setup-preview.tsx",
   "features/setup/components/review-report.tsx",
+  "features/setup/components/csv-import-panel.tsx",
 ];

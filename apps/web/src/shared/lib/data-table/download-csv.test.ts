@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { CSV_BOM, downloadCsv, toCsvBlob } from "./download-csv";
+import { CSV_BOM, downloadCsv, downloadCsvText, toCsvBlob } from "./download-csv";
 import type { CsvDownloadEnv } from "./download-csv";
 
 const columns = [{ header: "Name", value: (row: { name: string }) => row.name }];
@@ -50,6 +50,16 @@ describe("downloadCsv", () => {
     downloadCsv([{ name: "Ada" }], columns, "users.csv", env);
     expect(calls).not.toContain("revoke blob:fake");
     expect(scheduled).toHaveLength(1);
+    scheduled[0]!();
+    expect(calls.at(-1)).toBe("revoke blob:fake");
+  });
+});
+
+describe("downloadCsvText", () => {
+  test("downloads ready-made CSV text under the given filename and revokes later", () => {
+    const { env, calls, scheduled } = fakeEnv();
+    downloadCsvText("a,b\n1,2\n", "plantilla.csv", env);
+    expect(calls).toEqual(["create", "trigger blob:fake plantilla.csv"]);
     scheduled[0]!();
     expect(calls.at(-1)).toBe("revoke blob:fake");
   });
