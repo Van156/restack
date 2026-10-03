@@ -48,8 +48,8 @@ export default function TableSessionPage({
   plan: readonly FloorPlanArea[];
   onBack: () => void;
 }) {
-  const { actingToken } = useActingMember(locationId);
-  const actions = useOrderActions(locationId, actingToken);
+  const { actingToken, signer } = useActingMember(locationId);
+  const actions = useOrderActions(locationId, { token: actingToken, signer });
   const offline = useOfflineQueue();
   const [panel, setPanel] = useState<Panel>({ kind: "none" });
   const session = tile.session;
@@ -145,7 +145,9 @@ export default function TableSessionPage({
         errorMessage={actions.errorMessage}
         onBack={onBack}
         onAddItem={() => setPanel({ kind: "menu" })}
-        onSend={() => void actions.run({ type: "send_to_kitchen", session })}
+        onSend={() =>
+          void actions.run({ type: "send_to_kitchen", session, key: crypto.randomUUID() })
+        }
         onRequestBill={() => void actions.run({ type: "request_bill", session })}
         onMove={() => setPanel({ kind: "move" })}
         onRemoveLine={(line) =>

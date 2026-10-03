@@ -1,5 +1,7 @@
 import type { QueueRecord, QueueStatus } from "@/features/offline-queue";
 
+import { refusalCopy } from "./refusal-copy";
+
 export type PendingRow = {
   key: string;
   label: string;
@@ -31,6 +33,8 @@ function label(record: QueueRecord, names: Names): string {
       return `Agregar ${Number(record.payload.quantity ?? 1)} × ${names.item(text(record, "menuItemId") ?? "") ?? "producto"}`;
     case "void":
       return "Anular una línea";
+    case "send_to_kitchen":
+      return "Enviar a cocina";
     default:
       return "Registro pendiente";
   }
@@ -46,7 +50,10 @@ function message(record: QueueRecord): string | undefined {
     return "No se pudo enviar; se reintenta solo.";
   }
   if (record.status === "rejected") {
-    return `El servidor lo rechazó: ${record.lastError?.message ?? "sin detalle"}`;
+    const error = record.lastError;
+    return (
+      (error && refusalCopy(error)) ?? `El servidor lo rechazó: ${error?.message ?? "sin detalle"}`
+    );
   }
   return undefined;
 }

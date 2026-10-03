@@ -1,27 +1,31 @@
 import { Button } from "@base-template/ui/components/button";
 import { useState } from "react";
 
-import { client } from "@/app/orpc";
+import { useOfflineQueue } from "@/features/offline-queue";
 
 import { useStaffOptions } from "../hooks/use-staff-options";
-import { pinFailure, type PinFailure } from "../lib/pin-failure";
+import { useSwitchIn } from "../hooks/use-switch-in";
+import type { PinFailure } from "../lib/pin-failure";
 import { useActingMember } from "./acting-member-provider";
 import StaffPinDialog from "./staff-pin-dialog";
 
 /** Shows who is acting on this shared device and opens the PIN switch-in. */
 export default function ActingBar({ locationId }: { locationId: string }) {
   const { acting, expired, switchIn, switchOut } = useActingMember(locationId);
-  const staff = useStaffOptions();
+  const staff = useStaffOptions(locationId);
+  const runSwitchIn = useSwitchIn(locationId);
+  const { online } = useOfflineQueue();
   const [open, setOpen] = useState(false);
   const [failure, setFailure] = useState<PinFailure | null>(null);
 
   async function submit(memberId: string, pin: string) {
     setFailure(null);
-    try {
-      switchIn(await client.restaurant.staff.switchIn({ locationId, memberId, pin }));
+    const outcome = await runSwitchIn(memberId, pin);
+    if (outcome.status === "ok") {
+      switchIn(outcome.acting);
       setOpen(false);
-    } catch (error) {
-      setFailure(pinFailure(error));
+    } else {
+      setFailure(outcome.failure);
     }
   }
 
@@ -29,7 +33,7 @@ export default function ActingBar({ locationId }: { locationId: string }) {
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm">
       <p aria-live="polite">
         {acting
-          ? `Atiende: ${acting.name}`
+          ? `Atiende: ${acting.name}${acting.credential.kind === "offline" ? " (PIN sin conexión)" : ""}`
           : expired
             ? "Tu sesión de PIN venció. Los pedidos van a nombre de la cuenta del dispositivo."
             : "Pedidos a nombre de la cuenta del dispositivo."}
@@ -47,7 +51,11 @@ export default function ActingBar({ locationId }: { locationId: string }) {
       {open ? (
         <StaffPinDialog
           title="Entrar con mi PIN"
-          description="Elige tu nombre y escribe tu PIN para que tus pedidos queden a tu nombre."
+          description={
+            online
+              ? "Elige tu nombre y escribe tu PIN para que tus pedidos queden a tu nombre."
+              : "Sin conexión: tu PIN se verifica con los datos guardados en este dispositivo."
+          }
           options={staff.all}
           emptyMessage={staff.isPending ? "Cargando el equipo…" : "No pudimos cargar el equipo."}
           failure={failure}

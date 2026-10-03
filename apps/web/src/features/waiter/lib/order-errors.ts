@@ -1,6 +1,5 @@
-import { OfflineRequiredError } from "./order-gateway";
-
-const UNROUTED = /^No Station at this Location prepares: (.+)\.$/;
+import { OfflineRequiredError, OnlineSwitchInRequiredError } from "./order-gateway";
+import { unroutedCopy } from "./refusal-copy";
 
 function field(error: unknown, name: "code" | "message"): string | undefined {
   const value =
@@ -13,11 +12,14 @@ export function describeOrderError(error: unknown): string {
   if (error instanceof OfflineRequiredError) {
     return "Sin conexión: esto necesita internet. Inténtalo cuando vuelva la conexión.";
   }
+  if (error instanceof OnlineSwitchInRequiredError) {
+    return "Para aplicar un descuento entra con tu PIN cuando haya conexión.";
+  }
   const code = field(error, "code");
   const message = field(error, "message") ?? "";
-  const unrouted = UNROUTED.exec(message)?.[1];
+  const unrouted = unroutedCopy(message);
   if (unrouted) {
-    return `Estos productos no tienen estación en este local: ${unrouted}. Pide a un administrador que los asigne.`;
+    return unrouted;
   }
   if (code === "CONFLICT" && message === "This Table already has an open session.") {
     return "Esta mesa ya tiene una cuenta abierta.";

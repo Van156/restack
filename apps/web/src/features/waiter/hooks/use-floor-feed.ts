@@ -2,13 +2,14 @@ import { useMemo } from "react";
 
 import { client } from "@/app/orpc";
 import { isNetworkFailure, useOfflineQueue } from "@/features/offline-queue";
+import { useCached } from "@/shared/hooks/use-cached";
 import { useFeed } from "@/shared/hooks/use-feed";
 import { useRuntime } from "@/shared/hooks/use-runtime";
 import { createPollingTransport } from "@/shared/lib/polling";
 
 import type { FloorCall, FloorSession } from "../lib/floor-plan";
 import type { WaiterCallInput } from "../lib/waiter-calls";
-import { useCached, useWaiterCache } from "./use-waiter-cache";
+import { useWaiterCache } from "./use-waiter-cache";
 
 export const FLOOR_POLL_INTERVAL_MS = 1000;
 

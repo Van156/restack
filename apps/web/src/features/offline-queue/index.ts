@@ -30,6 +30,7 @@ export type {
   QueueSnapshot,
   QueueStatus,
   QueueStorage,
+  RecordSigner,
   SyncTransport,
   WireRecord,
   WireResult,

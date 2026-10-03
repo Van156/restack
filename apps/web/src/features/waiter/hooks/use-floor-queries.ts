@@ -2,9 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import { authClient } from "@/app/auth-client";
 import { client } from "@/app/orpc";
+import { useCached } from "@/shared/hooks/use-cached";
 import { orgQueryKey } from "@/shared/lib/org-query-key";
 
-import { useCached, useWaiterCache } from "./use-waiter-cache";
+import { useWaiterCache } from "./use-waiter-cache";
 
 export function waiterQueryKey(organizationId: string | undefined, ...parts: readonly unknown[]) {
   return orgQueryKey(organizationId, "waiter", ...parts);

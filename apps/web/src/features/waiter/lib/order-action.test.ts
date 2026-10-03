@@ -88,7 +88,7 @@ describe("runOnline", () => {
 
   test("sends, moves, requests the bill and applies a discount on the session", async () => {
     const { api, calls } = fakeApi();
-    await runOnline(api, "loc1", { type: "send_to_kitchen", session }, "tok");
+    await runOnline(api, "loc1", { type: "send_to_kitchen", session, key: "snd" }, "tok");
     await runOnline(api, "loc1", { type: "move_session", session, tableId: "t2", key: "m" }, "tok");
     await runOnline(api, "loc1", { type: "request_bill", session }, "tok");
     await runOnline(
@@ -103,6 +103,8 @@ describe("runOnline", () => {
       "requestBill",
       "applyDiscount",
     ]);
+    expect(calls[1]?.[1]).toEqual({ tableSessionId: "s1", tableId: "t2", actingToken: "tok" });
+    expect(calls[2]?.[1]).toEqual({ tableSessionId: "s1", actingToken: "tok" });
     expect(calls[3]?.[1]).toEqual({
       tableSessionId: "s1",
       kind: "percent",

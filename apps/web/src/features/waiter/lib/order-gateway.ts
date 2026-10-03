@@ -1,4 +1,10 @@
-import { isNetworkFailure, type EnqueueInput } from "@/features/offline-queue";
+import {
+  isNetworkFailure,
+  type Clock,
+  type EnqueueInput,
+  type QueueRecord,
+  type RecordSigner,
+} from "@/features/offline-queue";
 
 import {
   runOnline,
@@ -16,6 +22,19 @@ export class OfflineRequiredError extends Error {
   }
 }
 
+/** A discount is attributed through an acting token, which a member who entered the PIN offline lacks. */
+export class OnlineSwitchInRequiredError extends Error {
+  constructor() {
+    super("This action needs a PIN switch-in made online.");
+  }
+}
+
+/** How the member acting on the device is attributed: an online token, an offline signer, or nobody. */
+export type RecordActor = { token?: string; signer?: RecordSigner };
+
+/** A record ready to queue; every queueable action has its own idempotency key. */
+export type QueuedAction = EnqueueInput & { idempotencyKey: string };
+
 const sessionPayload = (session: SessionRef) =>
   "sessionId" in session
     ? { tableSessionId: session.sessionId }
@@ -25,18 +44,13 @@ const linePayload = (line: LineRef) =>
   "lineId" in line ? { lineId: line.lineId } : { lineKey: line.lineKey };
 
 /** The sync record for an action, or null when the action cannot wait in the queue. */
-export function toQueueInput(
-  action: OrderAction,
-  actingToken: string | undefined,
-): EnqueueInput | null {
-  const token = actingToken ? { actingToken } : {};
+export function toQueueInput(action: OrderAction): QueuedAction | null {
   switch (action.type) {
     case "open_session":
       return {
         kind: "open_session",
         idempotencyKey: action.key,
         payload: { tableId: action.tableId },
-        ...token,
       };
     case "add_line":
       return {
@@ -50,7 +64,6 @@ export function toQueueInput(
           modifiers: action.modifiers,
           ...(action.note ? { note: action.note } : {}),
         },
-        ...token,
       };
     case "remove_line":
     case "void_line":
@@ -63,16 +76,19 @@ export function toQueueInput(
             ? { overrideId: action.overrideId }
             : {}),
         },
-        ...token,
       };
     case "move_session":
       return {
         kind: "move_session",
         idempotencyKey: action.key,
         payload: { ...sessionPayload(action.session), tableId: action.tableId },
-        ...token,
       };
     case "send_to_kitchen":
+      return {
+        kind: "send_to_kitchen",
+        idempotencyKey: action.key,
+        payload: sessionPayload(action.session),
+      };
     case "request_bill":
     case "discount":
       return null;
@@ -91,18 +107,72 @@ function refs(action: OrderAction): (SessionRef | LineRef)[] {
   }
 }
 
-/** Whether the server cannot know what the action names yet, or the void still needs its Override. */
-function mustQueue(action: OrderAction): boolean {
-  return (
+/** Stamps the record with who made it: the acting token, or a mac from the offline PIN. */
+export async function withActor(
+  input: QueuedAction,
+  actor: RecordActor,
+  now: Date,
+): Promise<QueuedAction> {
+  if (actor.signer) {
+    const offlineActor = await actor.signer.sign({
+      idempotencyKey: input.idempotencyKey,
+      kind: input.kind,
+      deviceRecordedAt: now,
+    });
+    return { ...input, deviceRecordedAt: now, offlineActor };
+  }
+  return actor.token ? { ...input, actingToken: actor.token } : input;
+}
+
+type QueuedWork = Pick<QueueRecord, "idempotencyKey" | "kind" | "status" | "payload" | "result">;
+
+/** Whether an unsent record of this device already names the session, by server id or by opener key. */
+function hasQueuedWork(session: SessionRef, records: readonly QueuedWork[]): boolean {
+  const opens = (key: unknown) =>
+    "sessionId" in session &&
+    records.some(
+      (record) =>
+        record.idempotencyKey === key &&
+        record.kind === "open_session" &&
+        record.result?.entityId === session.sessionId,
+    );
+  return records.some((record) => {
+    const unsent =
+      record.status === "pending" || record.status === "failed" || record.status === "waiting";
+    const { tableSessionId, sessionKey } = record.payload;
+    const names =
+      "sessionId" in session
+        ? tableSessionId === session.sessionId || opens(sessionKey)
+        : sessionKey === session.sessionKey;
+    return unsent && record.kind !== "send_to_kitchen" && names;
+  });
+}
+
+/**
+ * Whether the action goes through the queue even when online: it names something the server does
+ * not know yet, a void still needs its Override, a send must follow lines still queued, or the
+ * member entered the PIN offline (only a queued record can carry the signature).
+ */
+function mustQueue(action: OrderAction, deps: GatewayDeps): boolean {
+  if (
     refs(action).some((ref) => serverIdOf(ref) === null) ||
     (action.type === "void_line" && !action.overrideId)
-  );
+  ) {
+    return true;
+  }
+  if (action.type === "send_to_kitchen" && hasQueuedWork(action.session, deps.records)) {
+    return true;
+  }
+  return deps.actor.signer !== undefined && toQueueInput(action) !== null;
 }
 
 export type GatewayDeps = {
   api: OrdersApi;
   locationId: string;
-  actingToken: string | undefined;
+  actor: RecordActor;
+  clock: Clock;
+  /** The device's queue, to keep a send behind the lines still waiting in it. */
+  records: readonly QueuedWork[];
   online: boolean;
   enqueue: (input: EnqueueInput) => Promise<unknown>;
   /** Feeds connectivity detection: a failed request that says nothing of the business, or a reached server. */
@@ -117,10 +187,13 @@ export async function executeOrderAction(
   deps: GatewayDeps,
   action: OrderAction,
 ): Promise<"applied" | "queued"> {
-  const record = toQueueInput(action, deps.actingToken);
-  if (deps.online && !mustQueue(action)) {
+  const record = toQueueInput(action);
+  if (action.type === "discount" && deps.actor.signer) {
+    throw new OnlineSwitchInRequiredError();
+  }
+  if (deps.online && !mustQueue(action, deps)) {
     try {
-      await runOnline(deps.api, deps.locationId, action, deps.actingToken);
+      await runOnline(deps.api, deps.locationId, action, deps.actor.token);
       deps.onRequest("ok");
       return "applied";
     } catch (error) {
@@ -134,6 +207,6 @@ export async function executeOrderAction(
   if (!record) {
     throw new OfflineRequiredError();
   }
-  await deps.enqueue(record);
+  await deps.enqueue(await withActor(record, deps.actor, deps.clock.now()));
   return "queued";
 }

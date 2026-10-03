@@ -28,7 +28,7 @@ export default function OverridePrompt({
   onGranted: (overrideId: string) => void;
   onCancel: () => void;
 }) {
-  const staff = useStaffOptions();
+  const staff = useStaffOptions(locationId);
   const { data: member } = authClient.useActiveMember();
   const [failure, setFailure] = useState<PinFailure | null>(null);
   const isOwner = member?.role.split(",").some((name) => name.trim() === "owner") ?? false;

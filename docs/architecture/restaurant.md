@@ -205,6 +205,10 @@ Spec story 123: a shared device switches Staff in with their PIN while offline, 
 
 `resolveOfflineActor` runs where an acting token would (`resolveActingMember`), so every attributed kind (lines, voids, payments and settling, documents, session opening, moves, sends) uses it. In order: the record is at most 48 hours old (`offline_actor_expired`); the member exists with a PIN and the claimed epoch is their current one (`offline_actor_invalid` / `offline_actor_stale`); the mac verifies in constant time against the key the server recomputes (`offline_actor_invalid`); the member is still assigned to the Location or is the Owner; and the usual permission of the record kind holds for that member (`order:take`, `billing:charge` plus the Location flag). All refusals are `FORBIDDEN` with `data.reason` set; a rejected record is not retried by time and needs the member to switch in again with fresh material.
 
+### Client implementation
+
+`apps/web/src/features/acting-member/lib` (`offline-pin-crypto.ts` is the contract steps 2 to 4; tested against a vector produced by `lib/offline-actor.ts`). The device stores the sealed material per organization and Location (`restack:offline-pin:<organizationId>:<locationId>`), refetches it on opening the waiter app, about daily and on `offline_actor_stale`, and throttles offline attempts per member: 5 wrong PINs lock that member on the device for 15 minutes, persisted. Details in [web-app.md](./web-app.md#waiter-pages).
+
 ### What it does and does not give
 
 - Binding: the key includes the member id of the session that fetched the material, which must be the session that syncs. Material fetched by one login does not verify for another. It is not bound to the hardware (a browser has no secret the server can verify); a stolen unlocked device with its login holds the same material.

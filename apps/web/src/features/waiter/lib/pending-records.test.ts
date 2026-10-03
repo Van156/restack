@@ -106,4 +106,50 @@ describe("pendingRows", () => {
       action: "retry",
     });
   });
+
+  test("a queued send to the kitchen reads as one", () => {
+    const [row] = pendingRows(
+      [record({ kind: "send_to_kitchen", idempotencyKey: "s", payload: { sessionKey: "a" } })],
+      names,
+    );
+    expect(row?.label).toBe("Enviar a cocina");
+  });
+
+  const rejected = (reason: string, message: string) =>
+    pendingRows(
+      [
+        record({
+          kind: "send_to_kitchen",
+          idempotencyKey: "s",
+          status: "rejected",
+          payload: { sessionKey: "a" },
+          lastError: { code: "CONFLICT", message, reason },
+        }),
+      ],
+      names,
+    )[0];
+
+  test("a send refused for items with no Station names them in Spanish", () => {
+    expect(
+      rejected("unrouted_items", "No Station at this Location prepares: Jugo, Postre.")?.message,
+    ).toBe(
+      "Estos productos no tienen estación en este local: Jugo, Postre. Pide a un administrador que los asigne.",
+    );
+  });
+
+  test("a record refused because of the offline PIN says why, in Spanish", () => {
+    expect(rejected("offline_actor_stale", "x")?.message).toBe(
+      "No se pudo comprobar quién tomó esto porque el PIN de esa persona cambió. Regístralo de nuevo.",
+    );
+    expect(rejected("offline_actor_invalid", "x")?.message).toBe(
+      "No se pudo comprobar el PIN con el que se tomó esto. Regístralo de nuevo entrando con tu PIN.",
+    );
+    expect(rejected("offline_actor_expired", "x")?.message).toBe(
+      "Pasaron más de 48 horas desde que se tomó esto y ya no se acepta a nombre de esa persona. Regístralo de nuevo.",
+    );
+  });
+
+  test("any other refusal keeps the server's words", () => {
+    expect(rejected("something_else", "Nope")?.message).toBe("El servidor lo rechazó: Nope");
+  });
 });

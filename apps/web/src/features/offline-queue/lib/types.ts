@@ -34,6 +34,15 @@ export type QueueStatus =
 /** Attribution of a record made after an offline PIN switch-in; replaces the acting token. */
 export type OfflineActor = { memberId: string; epoch: number; mac: string };
 
+/** Signs a record for the member who entered their PIN offline (`openOfflineSigner`). */
+export type RecordSigner = {
+  sign(record: {
+    idempotencyKey: string;
+    kind: string;
+    deviceRecordedAt: Date;
+  }): Promise<OfflineActor>;
+};
+
 export type QueueError = {
   code: string;
   message: string;

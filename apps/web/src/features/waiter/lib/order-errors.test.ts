@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { describeOrderError } from "./order-errors";
-import { OfflineRequiredError } from "./order-gateway";
+import { OfflineRequiredError, OnlineSwitchInRequiredError } from "./order-gateway";
 
 const failure = (code: string, message: string) => Object.assign(new Error(message), { code });
 
@@ -34,6 +34,12 @@ describe("describeOrderError", () => {
   test("an action that needs the server explains there is no connection", () => {
     expect(describeOrderError(new OfflineRequiredError())).toBe(
       "Sin conexión: esto necesita internet. Inténtalo cuando vuelva la conexión.",
+    );
+  });
+
+  test("a discount after an offline switch-in asks for the PIN online", () => {
+    expect(describeOrderError(new OnlineSwitchInRequiredError())).toBe(
+      "Para aplicar un descuento entra con tu PIN cuando haya conexión.",
     );
   });
 

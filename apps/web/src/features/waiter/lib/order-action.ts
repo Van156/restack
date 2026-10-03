@@ -21,7 +21,7 @@ export type OrderAction =
     }
   | { type: "remove_line"; line: LineRef; key: string }
   | { type: "void_line"; line: LineRef; key: string; overrideId?: string }
-  | { type: "send_to_kitchen"; session: SessionRef }
+  | { type: "send_to_kitchen"; session: SessionRef; key: string }
   | { type: "move_session"; session: SessionRef; tableId: string; key: string }
   | { type: "request_bill"; session: SessionRef }
   | {
@@ -91,9 +91,10 @@ export function runOnline(
       return api.moveSession({
         tableSessionId: serverIdOf(action.session)!,
         tableId: action.tableId,
+        actingToken,
       });
     case "request_bill":
-      return api.requestBill({ tableSessionId: serverIdOf(action.session)! });
+      return api.requestBill({ tableSessionId: serverIdOf(action.session)!, actingToken });
     case "discount":
       return api.applyDiscount({
         tableSessionId: serverIdOf(action.session)!,

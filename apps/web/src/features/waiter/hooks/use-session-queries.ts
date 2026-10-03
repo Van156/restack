@@ -2,11 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 
 import { authClient } from "@/app/auth-client";
 import { client } from "@/app/orpc";
+import { useCached } from "@/shared/hooks/use-cached";
 
 import type { CachedDetail } from "../lib/offline-cache";
 import { toMenuView } from "../lib/menu-view";
 import { waiterQueryKey } from "./use-floor-queries";
-import { useCached, useWaiterCache } from "./use-waiter-cache";
+import { useWaiterCache } from "./use-waiter-cache";
 
 export const SESSION_REFETCH_MS = 1000;
 

@@ -5,20 +5,22 @@ import { toast } from "sonner";
 import { authClient } from "@/app/auth-client";
 import { client } from "@/app/orpc";
 import { useOfflineQueue } from "@/features/offline-queue";
+import { useRuntime } from "@/shared/hooks/use-runtime";
 
 import type { OrderAction } from "../lib/order-action";
 import { describeOrderError } from "../lib/order-errors";
-import { executeOrderAction } from "../lib/order-gateway";
+import { executeOrderAction, type RecordActor } from "../lib/order-gateway";
 import { waiterQueryKey } from "./use-floor-queries";
 
 /**
  * Runs order actions for a Location online, or queues them when offline, and refreshes the
  * Waiter's data. A failure is kept as Spanish copy for the screen.
  */
-export function useOrderActions(locationId: string, actingToken?: string) {
+export function useOrderActions(locationId: string, actor: RecordActor) {
   const queryClient = useQueryClient();
   const { data: organization } = authClient.useActiveOrganization();
   const offline = useOfflineQueue();
+  const { clock } = useRuntime();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const mutation = useMutation({
@@ -27,7 +29,9 @@ export function useOrderActions(locationId: string, actingToken?: string) {
         {
           api: client.restaurant.orders,
           locationId,
-          actingToken,
+          actor,
+          clock,
+          records: offline.records,
           online: offline.online,
           enqueue: offline.enqueue,
           onRequest: offline.reportRequest,
