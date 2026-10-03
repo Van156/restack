@@ -47,4 +47,7 @@ export const APP_PRESENTATIONAL_COMPONENTS: readonly string[] = [
   "features/account/components/delete-account-card.tsx",
   "features/organizations/components/org-danger-zone.tsx",
   "features/admin/components/user-detail-tabs.tsx",
+  "features/setup/components/setup-stepper.tsx",
+  "features/setup/components/setup-preview.tsx",
+  "features/setup/components/review-report.tsx",
 ];

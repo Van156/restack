@@ -55,7 +55,10 @@ export const navGroups: NavGroup<NavContext>[] = [
         label: "Restaurante",
         to: "/restaurant/locations",
         icon: Store,
-        children: [{ label: "Locales", to: "/restaurant/locations" }],
+        children: [
+          { label: "Locales", to: "/restaurant/locations" },
+          { label: "Configuración", to: "/restaurant/setup" },
+        ],
       },
     ],
   },
