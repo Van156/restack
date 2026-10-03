@@ -117,14 +117,16 @@ describe("assertCatalogPermissions", () => {
 });
 
 describe("BUILT_IN_ORG_ROLES / isBuiltInOrgRole", () => {
-  test("lists owner, admin, member", () => {
-    expect(BUILT_IN_ORG_ROLES).toEqual(["owner", "admin", "member"]);
+  test("lists owner, admin, member and the restaurant roles", () => {
+    expect(BUILT_IN_ORG_ROLES).toEqual(["owner", "admin", "member", "cashier", "waiter"]);
   });
 
   test("identifies built-in role names", () => {
     expect(isBuiltInOrgRole("owner")).toBe(true);
     expect(isBuiltInOrgRole("admin")).toBe(true);
     expect(isBuiltInOrgRole("member")).toBe(true);
+    expect(isBuiltInOrgRole("cashier")).toBe(true);
+    expect(isBuiltInOrgRole("waiter")).toBe(true);
     expect(isBuiltInOrgRole("billing-manager")).toBe(false);
   });
 });

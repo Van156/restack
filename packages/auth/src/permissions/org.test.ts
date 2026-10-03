@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { admin, member, orgAc, orgStatements, owner } from "./org";
+import { admin, cashier, member, orgAc, orgRoles, orgStatements, owner, waiter } from "./org";
 
 describe("orgStatements", () => {
   test("extends better-auth organization defaults with audit and project", () => {
@@ -71,5 +71,69 @@ describe("member role", () => {
 
   test("has no audit access", () => {
     expect(member.authorize({ audit: ["read"] }).success).toBe(false);
+  });
+});
+
+describe("restaurant permission catalog", () => {
+  const ownerOnly = [
+    { subscription: ["manage"] },
+    { restaurant: ["delete"] },
+    { dian: ["choose"] },
+  ] as const;
+  const adminAndOwner = [
+    { dian: ["connect"] },
+    { setup: ["manage"] },
+    { staff: ["manage"] },
+    { report: ["read"] },
+    { override: ["give"] },
+  ] as const;
+  const cashierAndUp = [
+    { cashShift: ["manage"] },
+    { billing: ["charge"] },
+    { menu: ["soldOut"] },
+    { order: ["take"] },
+  ] as const;
+
+  test("Owner holds every restaurant permission", () => {
+    for (const permission of [...ownerOnly, ...adminAndOwner, ...cashierAndUp]) {
+      expect(owner.authorize(permission as never).success).toBe(true);
+    }
+  });
+
+  test("Administrator holds everything except subscription, restaurant delete and DIAN choice", () => {
+    for (const permission of ownerOnly) {
+      expect(admin.authorize(permission as never).success).toBe(false);
+    }
+    for (const permission of [...adminAndOwner, ...cashierAndUp]) {
+      expect(admin.authorize(permission as never).success).toBe(true);
+    }
+  });
+
+  test("Cashier takes orders, charges, manages the Cash shift and marks sold out; nothing else", () => {
+    for (const permission of cashierAndUp) {
+      expect(cashier.authorize(permission as never).success).toBe(true);
+    }
+    for (const permission of [...ownerOnly, ...adminAndOwner]) {
+      expect(cashier.authorize(permission as never).success).toBe(false);
+    }
+  });
+
+  test("Waiter takes orders and holds the catalog-level charge permission only", () => {
+    expect(waiter.authorize({ order: ["take"] }).success).toBe(true);
+    expect(waiter.authorize({ billing: ["charge"] }).success).toBe(true);
+    expect(waiter.authorize({ cashShift: ["manage"] }).success).toBe(false);
+    expect(waiter.authorize({ menu: ["soldOut"] }).success).toBe(false);
+    for (const permission of [...ownerOnly, ...adminAndOwner]) {
+      expect(waiter.authorize(permission as never).success).toBe(false);
+    }
+  });
+
+  test("the generic member role keeps working and gets no restaurant permission", () => {
+    expect(member.authorize({ project: ["read"] }).success).toBe(true);
+    expect(member.authorize({ order: ["take"] }).success).toBe(false);
+  });
+
+  test("cashier and waiter are registered as built-in roles", () => {
+    expect(Object.keys(orgRoles)).toEqual(["owner", "admin", "member", "cashier", "waiter"]);
   });
 });

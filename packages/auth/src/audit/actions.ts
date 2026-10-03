@@ -20,6 +20,27 @@ export const ORGANIZATION_AUDIT_ACTIONS = [
   "role.created",
   "role.updated",
   "role.deleted",
+  // Restaurant POS actions.
+  "location.created",
+  "location.updated",
+  "dian.choice_changed",
+  "dian.connected",
+  "plan.changed",
+  "override.granted",
+  "override.used",
+  "bill.reopened",
+  "order_line.voided",
+  "discount.applied",
+  "cash_shift.opened",
+  "cash_shift.closed",
+  "cash_shift.closed_with_difference",
+  "tip.distributed",
+  "device.paired",
+  "device.revoked",
+  "staff.pin_reset",
+  "staff.location_assigned",
+  "menu.imported",
+  "waiter_call.qr_regenerated",
 ] as const;
 
 /** Platform-scoped R7.1 actions. */
