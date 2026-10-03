@@ -30,6 +30,7 @@ describe("getSectionItems", () => {
       "Locales",
       "Configuración",
       "Equipo",
+      "Dispositivos",
       "Mi PIN",
     ]);
   });

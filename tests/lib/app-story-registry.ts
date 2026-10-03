@@ -53,4 +53,7 @@ export const APP_PRESENTATIONAL_COMPONENTS: readonly string[] = [
   "features/setup/components/csv-import-panel.tsx",
   "features/staff/components/staff-table.tsx",
   "features/staff/components/invite-staff-form.tsx",
+  "features/devices/components/pairing-code-card.tsx",
+  "features/devices/components/device-list.tsx",
+  "features/devices/components/activation-form.tsx",
 ];

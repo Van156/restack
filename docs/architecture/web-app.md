@@ -86,6 +86,26 @@ Impersonate and stop-impersonating go through better-auth's own client (`authCli
 
 `permission-load-error.tsx` is the shared early return of the ban, org-limit and impersonate cards. It renders only when the `usePlatformCan` query has no cached `data` (the first permission load failed). A failed background refetch of an already resolved query must not replace a working, authorized card mid-edit.
 
+## Restaurant pages
+
+`routes/_auth/_org/restaurant/route.tsx` is the layout (`SectionNav` tabs from the `restaurant` group in `navGroups`). UI copy is Spanish; error messages that come from the server are shown verbatim and are still English.
+
+| Route                   | Page                                                             | Gate (UX only; the server re-checks)          |
+| ----------------------- | ---------------------------------------------------------------- | --------------------------------------------- |
+| `/restaurant/locations` | Locations list and form (`features/locations`)                   | `setup:manage`; creating needs the Owner      |
+| `/restaurant/setup`     | Setup wizard, step in `?step=` (`features/setup`)                | `setup:manage`                                |
+| `/restaurant/staff`     | Staff list, invite with Role and Locations, assign, reset PIN    | `staff:manage`; Owner row limited (see below) |
+| `/restaurant/devices`   | Paired devices: pair, rename, revoke (`features/devices`)        | `setup:manage`                                |
+| `/restaurant/pin`       | The caller's own PIN                                             | none beyond membership                        |
+| `/activate`             | Public kitchen screen activation, under `_public-auth`, `?code=` | none (no session)                             |
+
+- **Active Location.** `useActiveLocation` resolves the Location a page works in: the one the user last picked (kept per organization in `localStorage`), else the first active one. Pages wrap their content in `LocationScope`, which shows the loader, retryable error or empty state and renders the picker. The Location list is already scoped server-side (the Owner sees all, everyone else their assignments).
+- **Query keys.** Restaurant queries use `orgQueryKey(organizationId, ...)` because switching organization does not clear the cache; setup writes invalidate the `["org", id, "setup"]` prefix.
+- **Setup wizard.** Steps are Áreas, Mesas, Estaciones, Menú and Revisar; completion is derived from the loaded counts (`stepCompletion`), never stored. The preview renders the T13 `FloorPlanTile` for every Table. Menu categories and items are restaurant-wide; Station routing and sold-out are per Location. The menu CSV import validates with `commit: false` first and commits only on a second, explicit action; row errors keep the file's line numbers (header is line 1).
+- **Staff.** The directory comes from better-auth members (`useOrgMemberDirectory`, capped at 500) joined with `staff.listAssignments`, which lists only Staff that have assignments in the caller's scope. Inviting is two calls: `inviteMember` (Role) then `staff.setInvitationLocations`; when the second fails the invitation exists, so the page offers a retry for the Locations instead of inviting again. The Owner row never offers Locations, and only the Owner can reset the Owner's PIN (`rowActions`).
+- **PIN entry.** The T13 `PinPad` takes the digits; `advancePinEntry` asks for the current PIN when changing, then the new PIN twice. No procedure says whether a member already has a PIN, so `/restaurant/pin` asks the person.
+- **Device activation.** See [restaurant.md](./restaurant.md#paired-devices) for where the device token is stored.
+
 ## Audit log pages
 
 The organization page uses `audit.list`, scoped server-side to `ctx.org.id`; no organization override is accepted, so the page can never be pointed at another tenant's log. Members back the actor filter (a picker instead of a raw id) and resolve actor ids to names; they are paginated past better-auth's 100-row page size and capped, with an `isIncomplete` flag surfaced in the page.

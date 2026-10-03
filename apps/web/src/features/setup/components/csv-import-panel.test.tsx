@@ -25,7 +25,7 @@ describe("CsvImportPanel", () => {
   test("offers the template and keeps Validar disabled until a file is chosen", () => {
     const html = render();
     expect(html).toContain("Descargar plantilla");
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>Validar archivo<\/button>/);
+    expect(html).toMatch(/<button[^>]*\sdisabled=""[^>]*>Validar archivo<\/button>/);
     expect(html).toContain("Sede Centro");
   });
 
@@ -57,6 +57,6 @@ describe("CsvImportPanel", () => {
   test("shows a file problem and disables validation", () => {
     const html = render({ fileName: "menu.xlsx", fileError: "Sube un archivo CSV." });
     expect(html).toContain("Sube un archivo CSV.");
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>Validar archivo<\/button>/);
+    expect(html).toMatch(/<button[^>]*\sdisabled=""[^>]*>Validar archivo<\/button>/);
   });
 });

@@ -76,7 +76,7 @@ describe("InviteStaffForm", () => {
 
   test("disables the invitation when the caller can assign no Role", () => {
     const html = renderToStaticMarkup(<InviteStaffForm {...props} roles={[]} />);
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>Enviar invitación<\/button>/);
+    expect(html).toMatch(/<button[^>]*\sdisabled=""[^>]*>Enviar invitación<\/button>/);
   });
 
   test("shows validation messages", () => {

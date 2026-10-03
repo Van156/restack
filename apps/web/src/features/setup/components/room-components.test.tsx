@@ -39,7 +39,7 @@ describe("NamedItemList", () => {
 
   test("disables adding while the draft is empty", () => {
     const html = renderToStaticMarkup(<NamedItemList {...props} items={[]} />);
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>Agregar<\/button>/);
+    expect(html).toMatch(/<button[^>]*\sdisabled=""[^>]*>Agregar<\/button>/);
   });
 });
 

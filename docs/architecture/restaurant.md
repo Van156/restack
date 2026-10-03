@@ -39,6 +39,7 @@ An Override lets a Staff member without the permission perform a guarded action 
 - `devices.redeem` is public. Its single guarded `UPDATE` makes a code work exactly once; only hashes of code and token are stored.
 - Rate limit: 20 attempts per source (first `x-forwarded-for`, else `x-real-ip`) and 5 per code in 15 minutes, through the injectable `RateLimiter` in `Context` (in-memory, per process, on the injected clock). Without a limiter in the context nothing is throttled.
 - `authenticateDevice` records `lastSeenAt`, which feeds the Location's online state. Kitchen procedures restrict Ticket access to the device's `stationIds`.
+- Web side: the public `/activate` page redeems the code and keeps `{ deviceToken, device }` in this browser's `localStorage` under `restack.device-activation` (`loadDeviceActivation`, exported by `features/devices`). A kitchen screen has no session, so the token must survive reloads; the cost is that script running on the origin can read it. Revoking the device on the server is the remedy for a lost screen. If storage is unavailable the page warns that the screen unlinks on reload.
 
 ## Orders
 
