@@ -8,6 +8,7 @@ import { makeDue, markRecordSynced, scheduleRetry } from "./transitions";
 import { QUEUE_KINDS } from "./types";
 import type {
   Clock,
+  OfflineActor,
   OfflineIncident,
   QueueError,
   QueueKind,
@@ -35,6 +36,8 @@ export type EnqueueInput = {
   /** Defaults to the clock's now; a document request passes the original sale time. */
   deviceRecordedAt?: Date | string;
   actingToken?: string;
+  /** From an offline PIN switch-in, signed for exactly this key, kind and `deviceRecordedAt`. */
+  offlineActor?: OfflineActor;
 };
 
 export type OfflineQueueDeps = {
@@ -132,6 +135,9 @@ export async function openOfflineQueue(deps: OfflineQueueDeps) {
   return {
     /** Idempotent: a key already queued returns the stored record. */
     async enqueue(input: EnqueueInput): Promise<QueueRecord> {
+      if (input.actingToken && input.offlineActor) {
+        throw new InvalidRecordError("A record has an acting token or an offline actor, not both.");
+      }
       const payload = prepare(input.kind, input.payload);
       const now = clock.now();
       if (
@@ -153,6 +159,7 @@ export async function openOfflineQueue(deps: OfflineQueueDeps) {
           payload,
           deviceRecordedAt: iso(recordedAt),
           ...(input.actingToken ? { actingToken: input.actingToken } : {}),
+          ...(input.offlineActor ? { offlineActor: input.offlineActor } : {}),
           status: "pending",
           attempts: 0,
           nextAttemptAt: iso(now),

@@ -377,3 +377,118 @@ describe("document outbox", () => {
     expect(keys(queue.documentOutbox())).toEqual(["key-3"]);
   });
 });
+
+describe("offline actor", () => {
+  const actor = { memberId: "mem1", epoch: 2, mac: "mac-1" };
+
+  test("is stored with the record and sent with it, with no acting token", async () => {
+    const transport = scriptedTransport(() => ({ status: "applied" }));
+    const { queue } = await setup(transport);
+    await queue.enqueue({ ...line(), offlineActor: actor });
+
+    expect(queue.get("key-1")?.offlineActor).toEqual(actor);
+    await queue.sync();
+
+    expect(transport.calls[0]?.[0]?.offlineActor).toEqual(actor);
+    expect("actingToken" in transport.calls[0]![0]!).toBe(false);
+  });
+
+  test("is stripped from records older than 48 h like a token, and kept stored", async () => {
+    const { queue, clock } = await setup(ok);
+    await queue.enqueue({ ...line(), offlineActor: actor });
+    clock.advance(48 * HOUR_MS);
+    expect(queue.selectBatch()[0]?.offlineActor).toEqual(actor);
+
+    clock.advance(1);
+
+    expect("offlineActor" in queue.selectBatch()[0]!).toBe(false);
+    expect(queue.get("key-1")?.offlineActor).toEqual(actor);
+  });
+
+  test("cannot travel with an acting token: the server rejects both", async () => {
+    const { queue } = await setup(ok);
+    await expect(
+      queue.enqueue({ ...line(), actingToken: "tok", offlineActor: actor }),
+    ).rejects.toThrow("both");
+  });
+
+  test("keeps its reason when the server refuses the member", async () => {
+    const transport = scriptedTransport(() => rejected("FORBIDDEN", "offline_actor_stale"));
+    const { queue } = await setup(transport);
+    await queue.enqueue({ ...line(), offlineActor: actor });
+    await queue.sync();
+
+    expect(queue.get("key-1")).toMatchObject({
+      status: "rejected",
+      lastError: { code: "FORBIDDEN", reason: "offline_actor_stale" },
+    });
+  });
+});
+
+describe("send to kitchen", () => {
+  const send = (extra: Record<string, unknown>): EnqueueInput => ({
+    kind: "send_to_kitchen",
+    payload: extra,
+  });
+  const lineOf = (sessionKey: string) =>
+    line({ tableSessionId: undefined, sessionKey, menuItemId: "m1" });
+
+  test("goes after the opener and the lines recorded before it, in the same batch", async () => {
+    const { queue } = await setup(ok);
+    await queue.enqueue({
+      kind: "open_session",
+      payload: { tableId: "t1" },
+      idempotencyKey: "open-1",
+    });
+    await queue.enqueue(lineOf("open-1"));
+    await queue.enqueue(send({ sessionKey: "open-1" }));
+
+    expect(keys(queue.selectBatch())).toEqual(["open-1", "key-1", "key-2"]);
+  });
+
+  test("waits while an earlier line of the session is still retrying, so no line misses the Ticket", async () => {
+    const { queue, clock } = await setup(ok);
+    await queue.enqueue(line());
+    await queue.enqueue(send({ tableSessionId: "ts1" }));
+    await queue.markFailed("key-1", { code: "NETWORK", message: "x" });
+
+    expect(keys(queue.selectBatch())).toEqual([]);
+    clock.advance(MINUTE_MS);
+    expect(keys(queue.selectBatch())).toEqual(["key-1", "key-2"]);
+  });
+
+  test("does not wait for lines of other sessions, and a rejected line does not hold it back", async () => {
+    const { queue } = await setup(ok);
+    await queue.enqueue(line({ tableSessionId: "other" }));
+    await queue.enqueue(line());
+    await queue.enqueue(send({ tableSessionId: "ts1" }));
+    await queue.markFailed("key-1", { code: "NETWORK", message: "x" });
+    expect(keys(queue.selectBatch())).toEqual(["key-2", "key-3"]);
+
+    const transport = scriptedTransport((record) =>
+      record.idempotencyKey === "key-1" ? rejected("NOT_FOUND") : { status: "applied" },
+    );
+    const second = await setup(transport);
+    await second.queue.enqueue(line());
+    await second.queue.enqueue(send({ tableSessionId: "ts1" }));
+    await second.queue.sync();
+
+    expect(second.queue.get("key-1")?.status).toBe("rejected");
+    expect(second.queue.get("key-2")?.status).toBe("synced");
+  });
+
+  test("a line held for a session still delays the send named by the session's server id", async () => {
+    const { queue } = await setup(scriptedTransport(() => ({ status: "applied" })));
+    await queue.enqueue({
+      kind: "open_session",
+      payload: { tableId: "t1" },
+      idempotencyKey: "open-1",
+    });
+    await queue.markSynced("open-1", { entityId: "ts9" });
+    await queue.enqueue(lineOf("open-1"));
+    await queue.enqueue(send({ tableSessionId: "ts9" }));
+    await queue.markFailed("key-1", { code: "NETWORK", message: "x" });
+
+    expect(keys(queue.selectBatch())).toEqual([]);
+  });
+});

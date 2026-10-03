@@ -14,7 +14,7 @@ export const QUEUE_KINDS = [
 ] as const satisfies readonly (typeof SYNC_KINDS)[number][];
 export type QueueKind = (typeof QUEUE_KINDS)[number];
 
-/** Mirrors the server's `MAX_OFFLINE_TOKEN_AGE_MS`; older records are sent without a token. */
+/** Mirrors the server's `MAX_OFFLINE_TOKEN_AGE_MS`; older records are sent without a token or offline actor. */
 export const TOKEN_MAX_AGE_MS = 48 * 60 * 60 * 1000;
 
 /** Source of the current time, injected so tests and the offline window are deterministic. */
@@ -31,6 +31,9 @@ export type QueueStatus =
   | "rejected"
   | "synced";
 
+/** Attribution of a record made after an offline PIN switch-in; replaces the acting token. */
+export type OfflineActor = { memberId: string; epoch: number; mac: string };
+
 export type QueueError = {
   code: string;
   message: string;
@@ -45,6 +48,7 @@ export type QueueRecord = {
   /** ISO time the device recorded the action (the sale time for a document request). */
   deviceRecordedAt: string;
   actingToken?: string;
+  offlineActor?: OfflineActor;
   status: QueueStatus;
   waitingOn?: "session" | "override";
   /** Override attached after reconnect to a void that needed one. */
@@ -78,6 +82,7 @@ export type WireRecord = {
   payload: Record<string, unknown>;
   deviceRecordedAt: string;
   actingToken?: string;
+  offlineActor?: OfflineActor;
 };
 
 export type WireResult = SyncRecordResult;

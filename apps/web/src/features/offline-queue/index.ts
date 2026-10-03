@@ -22,6 +22,7 @@ export { createSyncTransport } from "./lib/sync-transport";
 export { QUEUE_KINDS } from "./lib/types";
 export type {
   Clock,
+  OfflineActor,
   OfflineIncident,
   QueueError,
   QueueKind,

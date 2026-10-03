@@ -33,6 +33,34 @@ function dependencyKey(record: QueueRecord): string | undefined {
   return typeof key === "string" ? key : undefined;
 }
 
+/**
+ * The session a record names, as a server id when it can be known: a session opened by this queue
+ * and already synced is the same session whether it is named by key or by id.
+ */
+function sessionIdentity(
+  record: QueueRecord,
+  byKey: ReadonlyMap<string, QueueRecord>,
+): string | undefined {
+  const { tableSessionId, sessionKey } = record.payload;
+  if (typeof tableSessionId === "string") {
+    return tableSessionId;
+  }
+  if (typeof sessionKey !== "string") {
+    return undefined;
+  }
+  return byKey.get(sessionKey)?.result?.entityId ?? sessionKey;
+}
+
+/** A line or removal that has to reach the server before a send, or the Ticket would miss it. */
+function isLineWork(record: QueueRecord): boolean {
+  const unapplied =
+    record.status === "pending" || record.status === "failed" || record.status === "waiting";
+  return (
+    unapplied &&
+    (record.kind === "order_line" || (record.kind === "void" && record.waitingOn !== "override"))
+  );
+}
+
 /** Whether the record's own status lets it go out now, before looking at dependencies. */
 function isDue(record: QueueRecord, now: number, opener: QueueRecord | undefined): boolean {
   const dueAt = record.nextAttemptAt === null ? Infinity : new Date(record.nextAttemptAt).getTime();
@@ -65,7 +93,18 @@ export function selectDue(
   const byKey = new Map(records.map((r) => [r.idempotencyKey, r]));
   const chosen = new Set<string>();
   const batch: QueueRecord[] = [];
-  for (const record of records) {
+  const holdsSend = (send: QueueRecord, index: number) => {
+    const session = sessionIdentity(send, byKey);
+    return records
+      .slice(0, index)
+      .some(
+        (earlier) =>
+          isLineWork(earlier) &&
+          !chosen.has(earlier.idempotencyKey) &&
+          sessionIdentity(earlier, byKey) === session,
+      );
+  };
+  for (const [index, record] of records.entries()) {
     if (batch.length >= max) {
       break;
     }
@@ -80,25 +119,34 @@ export function selectDue(
     if (dependency && dependency.status !== "synced" && !chosen.has(dependency.idempotencyKey)) {
       continue;
     }
+    if (record.kind === "send_to_kitchen" && holdsSend(record, index)) {
+      continue;
+    }
     chosen.add(record.idempotencyKey);
     batch.push(record);
   }
   return batch;
 }
 
-/** What `sync.push` receives: the Override attached since, and no token older than the server accepts. */
+/**
+ * What `sync.push` receives: the Override attached since, and no token or offline actor older than
+ * the server accepts.
+ */
 export function toWire(record: QueueRecord, now: Date): WireRecord {
   const payload = record.overrideId
     ? { ...record.payload, overrideId: record.overrideId }
     : record.payload;
   const tokenAge = now.getTime() - new Date(record.deviceRecordedAt).getTime();
-  const keepToken = record.actingToken !== undefined && tokenAge <= TOKEN_MAX_AGE_MS;
+  const withinWindow = tokenAge <= TOKEN_MAX_AGE_MS;
+  const keepToken = record.actingToken !== undefined && withinWindow;
+  const keepActor = record.offlineActor !== undefined && withinWindow;
   return {
     idempotencyKey: record.idempotencyKey,
     kind: record.kind,
     payload: structuredClone(payload),
     deviceRecordedAt: record.deviceRecordedAt,
     ...(keepToken ? { actingToken: record.actingToken } : {}),
+    ...(keepActor ? { offlineActor: record.offlineActor } : {}),
   };
 }
 
