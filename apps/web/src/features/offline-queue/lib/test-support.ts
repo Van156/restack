@@ -1,4 +1,11 @@
-import type { Clock, QueueSnapshot, QueueStorage } from "./types";
+import type {
+  Clock,
+  QueueSnapshot,
+  QueueStorage,
+  SyncTransport,
+  WireRecord,
+  WireResult,
+} from "./types";
 
 /** A clock the test moves by hand. */
 export function fakeClock(start = "2026-10-03T12:00:00.000Z"): Clock & {
@@ -49,3 +56,41 @@ export function sequentialKeys(prefix = "key"): () => string {
   keyCounter = 0;
   return () => `${prefix}-${++keyCounter}`;
 }
+
+/** For tests that never push. */
+export const unusedTransport: SyncTransport = {
+  push: async () => {
+    throw new Error("transport not expected");
+  },
+};
+
+/** Transport that answers each pushed record through `answer` and remembers every call. */
+export function scriptedTransport(
+  answer: (record: WireRecord, index: number) => Partial<WireResult> | "omit",
+): SyncTransport & { calls: WireRecord[][] } {
+  const calls: WireRecord[][] = [];
+  return {
+    calls,
+    push: async (records) => {
+      calls.push(structuredClone(records));
+      return records.flatMap((record, index) => {
+        const reply = answer(record, index);
+        return reply === "omit"
+          ? []
+          : [
+              {
+                idempotencyKey: record.idempotencyKey,
+                kind: record.kind,
+                status: "applied",
+                ...reply,
+              } as WireResult,
+            ];
+      });
+    },
+  };
+}
+
+export const rejected = (code: string, reason?: string, message = code): Partial<WireResult> => ({
+  status: "rejected",
+  reason: { code, message, data: reason ? { reason } : undefined },
+});

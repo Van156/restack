@@ -1,4 +1,6 @@
 import { backoffDelayMs } from "./backoff";
+import { MAX_BATCH, applyResult, failBatch, selectDue, toWire } from "./batch";
+import type { SyncOutcome } from "./batch";
 import { deriveOfflineState } from "./offline-window";
 import type { OfflineState } from "./offline-window";
 import { QUEUE_KINDS } from "./types";
@@ -10,6 +12,8 @@ import type {
   QueueRecord,
   QueueSnapshot,
   QueueStorage,
+  SyncTransport,
+  WireRecord,
 } from "./types";
 
 export class InvalidRecordError extends Error {}
@@ -34,8 +38,22 @@ export type EnqueueInput = {
 export type OfflineQueueDeps = {
   storage: QueueStorage;
   clock: Clock;
+  transport: SyncTransport;
   /** Idempotency key generator; defaults to `crypto.randomUUID`. */
   newKey?: () => string;
+};
+
+export type SyncReport = { sent: number } & Record<SyncOutcome, number>;
+
+export type DocumentOutboxEntry = {
+  idempotencyKey: string;
+  /** The original sale time. */
+  saleTime: string;
+  contingency: boolean;
+  status: QueueRecord["status"];
+  attempts: number;
+  lastError?: QueueError;
+  nextAttemptAt: string | null;
 };
 
 type State = { records: QueueRecord[]; incidents: OfflineIncident[] };
@@ -72,13 +90,14 @@ function prepare(kind: QueueKind, payload: Record<string, unknown>): Record<stri
 }
 
 export async function openOfflineQueue(deps: OfflineQueueDeps) {
-  const { storage, clock } = deps;
+  const { storage, clock, transport } = deps;
   const newKey = deps.newKey ?? (() => crypto.randomUUID());
   const loaded = await storage.load();
   let state: State = loaded
     ? { records: loaded.records, incidents: loaded.incidents }
     : { records: [], incidents: [] };
   let lock: Promise<unknown> = Promise.resolve();
+  let inFlight: Promise<SyncReport> | null = null;
 
   const toSnapshot = (draft: State): QueueSnapshot => ({ version: 1, ...draft });
   const iso = (date: Date) => date.toISOString();
@@ -221,6 +240,86 @@ export async function openOfflineQueue(deps: OfflineQueueDeps) {
           open.endedAt = now;
         }
       });
+    },
+
+    /** The records `sync` would push now, in the shape `sync.push` receives. */
+    selectBatch(): WireRecord[] {
+      const now = clock.now();
+      return selectDue(state.records, now, MAX_BATCH).map((record) => toWire(record, now));
+    },
+
+    /** Pushes every due record in batches of at most 200 and files each result. Overlapping calls share one run. */
+    sync(): Promise<SyncReport> {
+      inFlight ??= (async () => {
+        const report: SyncReport = { sent: 0, synced: 0, failed: 0, waiting: 0, rejected: 0 };
+        const tried = new Set<string>();
+        for (;;) {
+          const now = clock.now();
+          const due = selectDue(state.records, now, MAX_BATCH, tried);
+          if (due.length === 0) {
+            return report;
+          }
+          const wire = due.map((record) => toWire(record, now));
+          const keys = due.map((record) => record.idempotencyKey);
+          for (const key of keys) {
+            tried.add(key);
+          }
+          let results: Awaited<ReturnType<SyncTransport["push"]>> | null = null;
+          let failure: string | null = null;
+          try {
+            results = await transport.push(wire);
+          } catch (error) {
+            failure = error instanceof Error ? error.message : String(error);
+          }
+          const settledAt = clock.now();
+          await mutate((draft) => {
+            const sent = keys.map((key) => find(draft, key));
+            if (results === null) {
+              failBatch(sent, { code: "NETWORK", message: failure ?? "Push failed." }, settledAt);
+              report.failed += sent.length;
+              return;
+            }
+            const byKey = new Map(results.map((result) => [result.idempotencyKey, result]));
+            for (const record of sent) {
+              report[applyResult(record, byKey.get(record.idempotencyKey), settledAt)] += 1;
+            }
+          });
+          report.sent += keys.length;
+        }
+      })().finally(() => {
+        inFlight = null;
+      });
+      return inFlight;
+    },
+
+    /** Gives a void that needs an Override the one obtained after reconnect, and makes it due. */
+    attachOverride(key: string, overrideId: string): Promise<void> {
+      const now = iso(clock.now());
+      return mutate((draft) => {
+        const record = find(draft, key);
+        if (record.kind !== "void" || record.status === "synced") {
+          throw new Error(`Record "${key}" cannot take an Override.`);
+        }
+        record.overrideId = overrideId;
+        record.status = "pending";
+        delete record.waitingOn;
+        record.nextAttemptAt = now;
+      });
+    },
+
+    /** Document requests not yet transmitted, oldest first. */
+    documentOutbox(): DocumentOutboxEntry[] {
+      return state.records
+        .filter((r) => r.kind === "document_request" && r.status !== "synced")
+        .map((r) => ({
+          idempotencyKey: r.idempotencyKey,
+          saleTime: r.deviceRecordedAt,
+          contingency: r.payload.contingency !== false,
+          status: r.status,
+          attempts: r.attempts,
+          ...(r.lastError ? { lastError: structuredClone(r.lastError) } : {}),
+          nextAttemptAt: r.nextAttemptAt,
+        }));
     },
 
     offlineState(): OfflineState {

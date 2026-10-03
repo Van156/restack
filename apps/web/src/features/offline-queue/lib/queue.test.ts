@@ -2,11 +2,16 @@ import { describe, expect, test } from "bun:test";
 
 import { MINUTE_MS } from "./test-support";
 import { ContingencyBlockedError, InvalidRecordError, openOfflineQueue } from "./queue";
-import { HOUR_MS, fakeClock, memoryStorage, sequentialKeys } from "./test-support";
+import { HOUR_MS, fakeClock, memoryStorage, sequentialKeys, unusedTransport } from "./test-support";
 
 async function setup(initial = memoryStorage()) {
   const clock = fakeClock();
-  const queue = await openOfflineQueue({ storage: initial, clock, newKey: sequentialKeys() });
+  const queue = await openOfflineQueue({
+    storage: initial,
+    clock,
+    transport: unusedTransport,
+    newKey: sequentialKeys(),
+  });
   return { clock, queue, storage: initial };
 }
 
@@ -261,7 +266,7 @@ describe("persistence", () => {
     await first.queue.markFailed("key-1", { code: "NETWORK", message: "x" });
 
     const clock = fakeClock("2026-10-04T12:00:00.000Z");
-    const reopened = await openOfflineQueue({ storage, clock });
+    const reopened = await openOfflineQueue({ storage, clock, transport: unusedTransport });
     expect(reopened.list()).toEqual(first.queue.list());
     expect(reopened.incidents()).toEqual(first.queue.incidents());
     expect(reopened.offlineState().durationMs).toBe(24 * HOUR_MS);
