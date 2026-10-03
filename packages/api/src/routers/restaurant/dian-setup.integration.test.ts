@@ -151,6 +151,18 @@ describe.skipIf(!reachable)("restaurant DIAN: choice and connection", () => {
     expect(await auditRows("dian.connected")).toHaveLength(2);
   });
 
+  test("refreshing an unchanged habilitación writes no audit row", async () => {
+    await connect({ habilitacion: "not_started" });
+    harness.invoicing.setHabilitacion("not_started");
+    const refreshed = await call(
+      restaurantRouter.dian.refreshHabilitacion,
+      { locationId: scenario.locationId },
+      { context: await scenario.as("admin") },
+    );
+    expect(refreshed.habilitacion).toBe("not_started");
+    expect(await auditRows("dian.connected")).toHaveLength(1);
+  });
+
   test("refreshing without a connection is a precondition failure", async () => {
     expect(
       await scenario.codeOf(

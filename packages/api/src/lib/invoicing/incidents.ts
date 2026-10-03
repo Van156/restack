@@ -3,10 +3,12 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 
 import type { DbExecutor } from "../executor";
 
+export type IncidentCause = "provider_unavailable" | "offline_sale";
+
 /** Opens the Location's incident unless one is already open (at most one per Location). */
 export async function openIncident(
   db: DbExecutor,
-  target: { organizationId: string; locationId: string; cause: string; startedAt: Date },
+  target: { organizationId: string; locationId: string; cause: IncidentCause; startedAt: Date },
 ): Promise<void> {
   await db.insert(schema.dianIncident).values(target).onConflictDoNothing();
 }

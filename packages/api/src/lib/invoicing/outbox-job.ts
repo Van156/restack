@@ -26,6 +26,7 @@ export type OutboxJobHandle = {
 
 const realScheduler: OutboxJobScheduler = {
   setInterval: (callback, intervalMs) => setInterval(callback, intervalMs),
+  // The scheduler type hides the timer handle's runtime type (Node and DOM typings differ).
   clearInterval: (handle) => clearInterval(handle as unknown as ReturnType<typeof setInterval>),
 };
 

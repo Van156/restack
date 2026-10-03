@@ -120,7 +120,7 @@ export const dianSetupRouter = {
       });
     }),
 
-  /** Asks the provider for the company's habilitación and stores it. */
+  /** Asks the provider for the company's habilitación and stores it; an unchanged state writes nothing. */
   refreshHabilitacion: orgProcedure
     .use(requirePermission({ dian: ["connect"] }))
     .input(locationInput)
@@ -146,6 +146,9 @@ export const dianSetupRouter = {
           throw new ORPCError("SERVICE_UNAVAILABLE", { message: error.message });
         }
         throw error;
+      }
+      if (habilitacion === connection.habilitacion) {
+        return connection;
       }
       return context.db.transaction(async (tx) => {
         const [updated] = await tx
