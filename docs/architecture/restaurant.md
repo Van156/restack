@@ -64,3 +64,15 @@ An Override lets a Staff member without the permission perform a guarded action 
 - Tax is derived once per line from the discounted line total (`deriveTax`, half up). The tax base therefore shrinks with the discount, and `base + tax` equals the Bill total.
 - The Bill total is the sum of discounted line totals. The tip is outside the tax base and is added only to the amount to pay.
 - The suggested tip is the Location's percent of the Bill total, rounded half up. The tip itself is any whole-peso amount the customer chooses.
+
+## Billing
+
+Procedures: `packages/api/src/routers/restaurant/billing*.ts`; schema `packages/db/src/schema/restaurant-billing.ts`.
+
+- One Bill row per Table session, created on the first tip or payment. Totals are always computed from the lines (`loadBillView`); the stored `base`, `tax`, `discountTotal` and `total` are a snapshot written at settle and cleared on reopen.
+- Who may charge: `billing:charge` plus Location access. A plain Waiter also needs the Location's "waiters can charge" flag (`roleMayCharge`); Owner, Administrator and Cashier do not. With an acting token the member who switched in must meet the same rules.
+- Tip: any whole-peso amount, outside the tax base and added only to what is due. It can change or be removed at any time, also after settling, without an Override; settled totals never change, only the amount due. A tip raised after settling leaves a balance that a later payment covers.
+- Payments: `amount` is what the payment covers and must fit the balance due (total plus tip); `tendered` is cash only and the change is `tendered - amount`. Card and QR/transfer need a reference. Split payments are separate calls. The idempotency key is unique per organization, so a retry returns the stored payment even after settling. `clientRecordedAt` keeps the device sale time; `recordedAt` is the server clock.
+- Settle needs at least one billed line and a balance of exactly zero; it settles the Table session, which frees the Table. Repeating it returns the settled Bill.
+- Reopen needs an Override (`reopen_bill`, target the Table session id) with no exemptions and is audited `bill.reopened`. The session returns to `bill_requested`; it is refused while the Table has a newer unsettled session. Payments stay on the Bill.
+- Buyer directory: restaurant-wide per organization, unique per document type and number. A buyer is saved only with `consent: true` (the consent time is recorded); saving the same document updates it. Procedures take a `locationId` for scope and the charge rule.
