@@ -12,6 +12,7 @@ import {
 } from "../../testing/billing-fixtures";
 import { createRestaurantHarness } from "../../testing/restaurant-fixtures";
 import type { RestaurantHarness } from "../../testing/restaurant-fixtures";
+import { resolveChargingMemberId } from "./billing-shared";
 import { restaurantRouter } from "./index";
 
 const reachable = await requireTestDatabaseOrSkip(resolveTestDatabaseUrl(), "restaurant billing");
@@ -229,6 +230,23 @@ describe.skipIf(!reachable)("restaurant billing: Bill and tips", () => {
         .where(eq(schema.location.id, scenario.seed.locations.a));
       await setTip(1_000, "waiterA");
       expect((await getBill()).tip).toBe(1_000);
+    });
+
+    test("charging is decided by the billing:charge permission of the Role", async () => {
+      const org = { id: scenario.seed.organizationId };
+      const context = { ...(await scenario.as("cashierA")), org };
+      const [location] = await harness.db
+        .select()
+        .from(schema.location)
+        .where(eq(schema.location.id, scenario.seed.locations.a));
+      const member = { id: scenario.seed.staff.cashierA.memberId };
+      const asRole = (role: string) => ({ ...context, member: { ...member, role } });
+      const chargingMember = (role: string) =>
+        resolveChargingMemberId(asRole(role) as never, location!, undefined);
+
+      expect(await chargingMember("cashier")).toBe(member.id);
+      expect(await chargingMember("waiter,cashier")).toBe(member.id);
+      await expect(chargingMember("member")).rejects.toMatchObject({ code: "FORBIDDEN" });
     });
 
     test("a Staff member of another Location cannot change the tip", async () => {
