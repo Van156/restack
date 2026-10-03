@@ -6,6 +6,7 @@ import FloorPlanView from "./floor-plan-view";
 import MenuPicker, { type MenuPickCategory } from "./menu-picker";
 import PendingRecordsView from "./pending-records-view";
 import TableSessionView from "./table-session-view";
+import WaiterCallsView from "./waiter-calls-view";
 
 const noop = () => {};
 
@@ -249,5 +250,56 @@ describe("PendingRecordsView", () => {
         <PendingRecordsView rows={[]} online onRetry={noop} onAuthorize={noop} />,
       ),
     ).toContain("No hay nada pendiente");
+  });
+});
+
+describe("WaiterCallsView", () => {
+  const rows = [
+    {
+      id: "c1",
+      tableName: "4",
+      reasonLabel: "Quiere pagar",
+      statusLabel: "Esperando",
+      ageMs: 95_000,
+      canAcknowledge: true,
+    },
+    {
+      id: "c2",
+      tableName: "7",
+      reasonLabel: "Necesita algo",
+      statusLabel: "En camino",
+      ageMs: 30_000,
+      canAcknowledge: false,
+    },
+  ];
+  const render = (online: boolean) =>
+    renderToStaticMarkup(
+      <WaiterCallsView
+        rows={rows}
+        online={online}
+        busy={false}
+        onAcknowledge={noop}
+        onResolve={noop}
+      />,
+    );
+
+  test("offers Voy only for a call nobody answered, and Atendido for both", () => {
+    const html = render(true);
+    expect(html).toContain("Voy a la mesa 4");
+    expect(html).not.toContain("Voy a la mesa 7");
+    expect(html).toContain("Mesa 4 atendida");
+    expect(html).toContain("Mesa 7 atendida");
+  });
+
+  test("disables the answers while offline", () => {
+    expect(render(false)).toMatch(/<button[^>]*data-disabled=""[^>]*aria-label="Voy a la mesa 4"/);
+  });
+
+  test("says so when nobody is calling", () => {
+    expect(
+      renderToStaticMarkup(
+        <WaiterCallsView rows={[]} online busy={false} onAcknowledge={noop} onResolve={noop} />,
+      ),
+    ).toContain("Nadie está llamando");
   });
 });

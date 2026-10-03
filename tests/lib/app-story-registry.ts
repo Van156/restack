@@ -59,4 +59,5 @@ export const APP_PRESENTATIONAL_COMPONENTS: readonly string[] = [
   "features/waiter/components/floor-plan-view.tsx",
   "features/waiter/components/table-session-view.tsx",
   "features/waiter/components/pending-records-view.tsx",
+  "features/waiter/components/waiter-calls-view.tsx",
 ];

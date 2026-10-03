@@ -7,11 +7,12 @@ import { useRuntime } from "@/shared/hooks/use-runtime";
 import { createPollingTransport } from "@/shared/lib/polling";
 
 import type { FloorCall, FloorSession } from "../lib/floor-plan";
+import type { WaiterCallInput } from "../lib/waiter-calls";
 import { useCached, useWaiterCache } from "./use-waiter-cache";
 
 export const FLOOR_POLL_INTERVAL_MS = 1000;
 
-type FloorFeed = { sessions: FloorSession[]; calls: FloorCall[] };
+type FloorFeed = { sessions: FloorSession[]; calls: (FloorCall & WaiterCallInput)[] };
 
 /**
  * Open sessions and Waiter calls of a Location, polled once per second. Every round is also the
