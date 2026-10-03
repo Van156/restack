@@ -54,6 +54,9 @@ export const overridesRouter = {
       if (!permissions.override?.includes("give")) {
         throw new ORPCError("FORBIDDEN", { message: CANNOT_APPROVE });
       }
+      if (approver.id === context.member.id && !hasOwnerRole(approver.role)) {
+        throw new ORPCError("FORBIDDEN", { message: CANNOT_APPROVE });
+      }
       if (!hasOwnerRole(approver.role)) {
         const [assignment] = await context.db
           .select({ id: schema.staffLocationAssignment.id })

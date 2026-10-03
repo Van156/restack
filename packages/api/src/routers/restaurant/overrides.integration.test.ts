@@ -91,6 +91,12 @@ describe.skipIf(!reachable)("restaurant overrides", () => {
     expect(JSON.stringify(granted)).not.toContain("4821");
   });
 
+  test("a member cannot approve their own Override, except the Owner", async () => {
+    expect(await codeOf(mint("admin"))).toBe("FORBIDDEN");
+    const own = await mint("owner", { approverMemberId: seed.staff.owner.memberId });
+    expect(own.overrideId).toBeTruthy();
+  });
+
   test("the Owner can approve in any Location without an assignment", async () => {
     const result = await mint("waiterA", { approverMemberId: seed.staff.owner.memberId });
     expect(result.overrideId).toBeTruthy();
