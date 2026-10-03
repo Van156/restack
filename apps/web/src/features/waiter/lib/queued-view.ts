@@ -5,7 +5,7 @@ import type { SessionRef } from "./order-action";
 import type { MenuPickCategory } from "./menu-view";
 
 /** Records that will still be sent: synced ones are on the server, rejected ones never apply. */
-export function isUnapplied(record: QueueRecord): boolean {
+export function isUnapplied(record: Pick<QueueRecord, "status">): boolean {
   return record.status === "pending" || record.status === "waiting" || record.status === "failed";
 }
 
@@ -25,10 +25,14 @@ export function menuIndex(categories: readonly MenuPickCategory[]): MenuIndex {
   };
 }
 
-const payloadString = (record: QueueRecord, field: string): string | undefined => {
+/** A string field of a queued record's payload, or undefined. */
+export function payloadText(
+  record: Pick<QueueRecord, "payload">,
+  field: string,
+): string | undefined {
   const value = record.payload[field];
   return typeof value === "string" ? value : undefined;
-};
+}
 
 /** Open sessions as the device will have them once its queue syncs: offline openings and moves applied. */
 export function overlayQueuedSessions(
@@ -38,7 +42,7 @@ export function overlayQueuedSessions(
   const result = sessions.map((session) => ({ ...session }));
   const unapplied = records.filter(isUnapplied);
   for (const open of unapplied.filter((record) => record.kind === "open_session")) {
-    const tableId = payloadString(open, "tableId");
+    const tableId = payloadText(open, "tableId");
     if (tableId && !result.some((session) => session.tableId === tableId)) {
       result.push({
         ref: { sessionKey: open.idempotencyKey },
@@ -49,9 +53,9 @@ export function overlayQueuedSessions(
     }
   }
   for (const move of unapplied.filter((record) => record.kind === "move_session")) {
-    const tableId = payloadString(move, "tableId");
-    const sessionId = payloadString(move, "tableSessionId");
-    const sessionKey = payloadString(move, "sessionKey");
+    const tableId = payloadText(move, "tableId");
+    const sessionId = payloadText(move, "tableSessionId");
+    const sessionKey = payloadText(move, "sessionKey");
     const target = result.find((session) =>
       "sessionId" in session.ref
         ? session.ref.sessionId === sessionId
@@ -78,7 +82,7 @@ export function sessionKeysFor(
     .filter(
       (record) =>
         (record.status === "synced" && record.result?.entityId === ref.sessionId) ||
-        (isUnapplied(record) && payloadString(record, "tableId") === tableId),
+        (isUnapplied(record) && payloadText(record, "tableId") === tableId),
     )
     .map((record) => record.idempotencyKey);
 }

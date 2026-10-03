@@ -1,7 +1,7 @@
 import type { QueueRecord } from "@/features/offline-queue";
 
 import type { LineRef } from "./order-action";
-import { isUnapplied, type MenuIndex } from "./queued-view";
+import { isUnapplied, payloadText as text, type MenuIndex } from "./queued-view";
 
 export type ServerLine = {
   id: string;
@@ -53,11 +53,6 @@ export function lineTotal(line: {
   const deltas = line.modifiers.reduce((sum, modifier) => sum + modifier.priceDelta, 0);
   return (line.unitPrice + deltas) * line.quantity;
 }
-
-const text = (record: QueueRecord, field: string): string | undefined => {
-  const value = record.payload[field];
-  return typeof value === "string" ? value : undefined;
-};
 
 function namesSession(record: QueueRecord, overlay: QueuedOverlay): boolean {
   const sessionId = text(record, "tableSessionId");

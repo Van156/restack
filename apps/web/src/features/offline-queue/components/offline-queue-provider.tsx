@@ -92,13 +92,14 @@ export function OfflineQueueProvider({
     if (!queue) {
       return;
     }
+    const opened = queue;
     let stopped = false;
     let cancel = () => {};
     async function tick() {
-      if (online && queue!.selectBatch().length > 0) {
-        await queue!.sync();
-        if (queue!.list().every((record) => record.status === "synced")) {
-          await queue!.purgeSynced();
+      if (online && opened.selectBatch().length > 0) {
+        await opened.sync();
+        if (opened.list().every((record) => record.status === "synced")) {
+          await opened.purgeSynced();
         }
       }
       if (!stopped) {
@@ -113,25 +114,28 @@ export function OfflineQueueProvider({
     };
   }, [queue, online, timer]);
 
-  const touch = async <T,>(work: Promise<T>) => {
-    const result = await work;
+  /** Runs `work` on the opened queue and re-renders with the result; rejects while it is still opening. */
+  const withQueue = async <T,>(work: (opened: OfflineQueue) => Promise<T>): Promise<T> => {
+    if (!queue) {
+      throw new Error("The offline queue is still opening.");
+    }
+    const result = await work(queue);
     refresh();
     return result;
   };
-  const missing = () => Promise.reject(new Error("The offline queue is still opening."));
   // Rebuilt on every render so `records` and `state` always read the queue as it is now.
   const api: OfflineQueueApi = {
     ready: queue !== null,
     online,
     state: queue ? queue.offlineState() : deriveOfflineState(null, clock.now()),
     records: queue ? queue.list() : [],
-    enqueue: (input) => (queue ? touch(queue.enqueue(input)) : missing()),
+    enqueue: (input) => withQueue((opened) => opened.enqueue(input)),
     attachOverride: (key, overrideId) =>
-      queue ? touch(queue.attachOverride(key, overrideId)) : missing(),
-    retry: (key) => (queue ? touch(queue.retry(key)) : missing()),
+      withQueue((opened) => opened.attachOverride(key, overrideId)),
+    retry: (key) => withQueue((opened) => opened.retry(key)),
     syncNow: async () => {
       if (queue) {
-        await touch(queue.sync());
+        await withQueue((opened) => opened.sync());
       }
     },
     reportRequest: (outcome) =>

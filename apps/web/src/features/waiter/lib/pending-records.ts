@@ -1,5 +1,6 @@
 import type { QueueRecord, QueueStatus } from "@/features/offline-queue";
 
+import { payloadText as text } from "./queued-view";
 import { refusalCopy } from "./refusal-copy";
 
 export type PendingRow = {
@@ -15,11 +16,6 @@ export type PendingRow = {
 type Names = {
   table: (id: string) => string | undefined;
   item: (id: string) => string | undefined;
-};
-
-const text = (record: QueueRecord, field: string): string | undefined => {
-  const value = record.payload[field];
-  return typeof value === "string" ? value : undefined;
 };
 
 function label(record: QueueRecord, names: Names): string {

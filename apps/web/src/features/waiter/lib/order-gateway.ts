@@ -14,8 +14,9 @@ import {
   type OrdersApi,
   type SessionRef,
 } from "./order-action";
+import { isUnapplied } from "./queued-view";
 
-/** The action needs the server (kitchen, bill, discount) and there is no connection. */
+/** The action needs the server (bill, discount) and there is no connection. */
 export class OfflineRequiredError extends Error {
   constructor() {
     super("This action needs a connection.");
@@ -137,14 +138,12 @@ function hasQueuedWork(session: SessionRef, records: readonly QueuedWork[]): boo
         record.result?.entityId === session.sessionId,
     );
   return records.some((record) => {
-    const unsent =
-      record.status === "pending" || record.status === "failed" || record.status === "waiting";
     const { tableSessionId, sessionKey } = record.payload;
     const names =
       "sessionId" in session
         ? tableSessionId === session.sessionId || opens(sessionKey)
         : sessionKey === session.sessionKey;
-    return unsent && record.kind !== "send_to_kitchen" && names;
+    return isUnapplied(record) && record.kind !== "send_to_kitchen" && names;
   });
 }
 
