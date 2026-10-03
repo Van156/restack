@@ -1,15 +1,17 @@
 import type { BuyerDocumentType } from "@base-template/db/schema/restaurant-billing";
+import type {
+  DianDocumentKind,
+  DianHabilitacionStatus,
+} from "@base-template/db/schema/restaurant-dian";
 import type { menuTaxClass } from "@base-template/db/schema/restaurant-setup";
 
 type MenuTaxClass = (typeof menuTaxClass.enumValues)[number];
 
-/** The DIAN documents a sale can produce: electronic POS equivalent (default) or factura electrónica. */
-export const DIAN_DOCUMENT_KINDS = ["pos_equivalent", "factura"] as const;
-export type DianDocumentKind = (typeof DIAN_DOCUMENT_KINDS)[number];
+export { DIAN_DOCUMENT_KINDS } from "@base-template/db/schema/restaurant-dian";
+export type { DianDocumentKind } from "@base-template/db/schema/restaurant-dian";
 
 /** Habilitación of a company with the DIAN, as shown in the wizard. */
-export const HABILITACION_STATUSES = ["not_started", "in_progress", "enabled"] as const;
-export type HabilitacionStatus = (typeof HABILITACION_STATUSES)[number];
+export type HabilitacionStatus = DianHabilitacionStatus;
 
 /** The provider company and numbering a Location issues under. */
 export type InvoicingConnection = {
