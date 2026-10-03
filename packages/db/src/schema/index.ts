@@ -4,3 +4,4 @@ export * from "./restaurant";
 export * from "./restaurant-setup";
 export * from "./restaurant-staff";
 export * from "./restaurant-orders";
+export * from "./restaurant-billing";
