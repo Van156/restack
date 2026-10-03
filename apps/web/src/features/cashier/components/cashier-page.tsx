@@ -101,6 +101,7 @@ function BillsContent({
     return (
       <CheckoutPage
         locationId={location.id}
+        dianEnabled={location.dianEnabled}
         sessionId={open.sessionId}
         tableName={open.tableName}
         onBack={() => onSearchChange({ ...search, session: undefined })}

@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import AdjustmentsPanel from "./adjustments-panel";
+import BuyerPicker from "./buyer-picker";
 import { openBill, paidBill } from "./checkout-fixtures";
 import CheckoutRowsView from "./checkout-rows-view";
 import CheckoutView from "./checkout-view";
+import DocumentChoiceForm from "./document-choice-form";
+import { DocumentResult, ExemptReceiptView } from "./document-result";
 import PaymentForm from "./payment-form";
 import TipStep from "./tip-step";
 
@@ -122,5 +126,182 @@ describe("CheckoutView", () => {
     );
     expect(html).toContain("pagados de más");
     expect(html).toContain("El pago supera el saldo pendiente.");
+  });
+});
+
+const acme = {
+  id: "b1",
+  documentType: "nit",
+  documentNumber: "900123456",
+  name: "Acme SAS",
+} as const;
+
+describe("AdjustmentsPanel", () => {
+  const props = {
+    settled: false,
+    online: true,
+    busy: false,
+    onDiscount: noop,
+    onVoid: noop,
+    onReopen: noop,
+  };
+  const lines = [{ id: "a", name: "Bandeja", quantity: 2 }];
+
+  test("before charging, offers a discount and voiding each line, always with an authorization", () => {
+    const html = renderToStaticMarkup(<AdjustmentsPanel {...props} lines={lines} />);
+    expect(html).toContain("Pedir descuento");
+    expect(html).toContain("Anular Bandeja");
+    expect(html).toContain("Un Administrador debe autorizarlos");
+  });
+
+  test("after charging, only reopening is offered", () => {
+    const html = renderToStaticMarkup(<AdjustmentsPanel {...props} lines={lines} settled />);
+    expect(html).toContain("Reabrir la cuenta");
+    expect(html).not.toContain("Anular Bandeja");
+  });
+
+  test("offline, every adjustment is disabled and the reason is given", () => {
+    const html = renderToStaticMarkup(<AdjustmentsPanel {...props} lines={lines} online={false} />);
+    expect(html).toContain("necesitan internet");
+    expect(html).toContain('disabled=""');
+  });
+});
+
+describe("BuyerPicker", () => {
+  const props = {
+    selected: null,
+    results: [],
+    searching: false,
+    busy: false,
+    searched: false,
+    onSearch: noop,
+    onSelect: noop,
+    onClear: noop,
+    onSave: noop,
+  };
+
+  test("searches by NIT, cédula or name", () => {
+    expect(renderToStaticMarkup(<BuyerPicker {...props} />)).toContain("NIT, cédula o nombre");
+  });
+
+  test("lists matches to choose, or says there are none", () => {
+    expect(renderToStaticMarkup(<BuyerPicker {...props} searched results={[acme]} />)).toContain(
+      "Acme SAS · NIT 900123456",
+    );
+    expect(renderToStaticMarkup(<BuyerPicker {...props} searched />)).toContain(
+      "No encontramos a nadie",
+    );
+  });
+
+  test("shows the chosen buyer with a way to remove them", () => {
+    const html = renderToStaticMarkup(<BuyerPicker {...props} selected={acme} />);
+    expect(html).toContain("Quitar comprador");
+    expect(html).not.toContain("Buscar comprador");
+  });
+});
+
+describe("DocumentChoiceForm", () => {
+  const props = {
+    options: { mode: "dian", kinds: ["pos_equivalent", "factura"], buyerSearch: true } as const,
+    kind: "pos_equivalent" as const,
+    buyer: null,
+    buyerPicker: <p>PICKER</p>,
+    busy: false,
+    error: null,
+    onKindChange: noop,
+    onIssue: noop,
+  };
+
+  test("defaults to the POS document and warns that consumidor final gives no deduction", () => {
+    const html = renderToStaticMarkup(<DocumentChoiceForm {...props} />);
+    expect(html).toContain("Documento equivalente POS");
+    expect(html).toContain("Factura electrónica");
+    expect(html).toContain("no da derecho a costos ni deducciones");
+  });
+
+  test("no note once a buyer is chosen", () => {
+    expect(renderToStaticMarkup(<DocumentChoiceForm {...props} buyer={acme} />)).not.toContain(
+      "no da derecho",
+    );
+  });
+
+  test("offline it explains a factura waits for the connection", () => {
+    const html = renderToStaticMarkup(
+      <DocumentChoiceForm
+        {...props}
+        options={{ mode: "dian", kinds: ["pos_equivalent"], buyerSearch: false }}
+      />,
+    );
+    expect(html).toContain("Sin conexión");
+    expect(html).not.toContain("PICKER");
+  });
+
+  test("an exempt Location gets a receipt button instead of a choice", () => {
+    const html = renderToStaticMarkup(
+      <DocumentChoiceForm {...props} options={{ mode: "exempt", kinds: [], buyerSearch: false }} />,
+    );
+    expect(html).toContain("Generar recibo");
+    expect(html).not.toContain("Factura electrónica");
+  });
+});
+
+describe("DocumentResult", () => {
+  const document = {
+    id: "d1",
+    kind: "pos_equivalent",
+    status: "issued",
+    number: "POS-12",
+    cude: "abc123",
+    qrData: "https://dian.example/qr",
+    rejectionReason: null,
+    contingency: false,
+    buyer: null,
+    saleTime: "2026-10-03T22:05:09.000Z",
+  } as const;
+  const props = { busy: false, online: true, onRetry: noop, onPrint: noop };
+
+  test("an issued document shows its status, CUDE, QR and a print button", () => {
+    const html = renderToStaticMarkup(<DocumentResult {...props} document={document} />);
+    expect(html).toContain("Emitido");
+    expect(html).toContain("CUDE abc123");
+    expect(html).toContain("Código QR del documento");
+    expect(html).toContain("Imprimir");
+    expect(html).toContain("03/10/2026 17:05:09");
+  });
+
+  test("a rejected document shows the reason and a retry", () => {
+    const html = renderToStaticMarkup(
+      <DocumentResult
+        {...props}
+        document={{ ...document, status: "rejected", rejectionReason: "NIT inválido" }}
+      />,
+    );
+    expect(html).toContain("NIT inválido");
+    expect(html).toContain("Reintentar");
+  });
+
+  test("a pending contingency document says it goes out when the connection returns", () => {
+    const html = renderToStaticMarkup(
+      <DocumentResult
+        {...props}
+        document={{ ...document, status: "pending", contingency: true }}
+      />,
+    );
+    expect(html).toContain("al recuperar la conexión");
+  });
+
+  test("the exempt receipt carries the no-invoice note", () => {
+    const html = renderToStaticMarkup(
+      <ExemptReceiptView
+        onPrint={noop}
+        receipt={{
+          note: "Este documento no es una factura electrónica",
+          lines: [{ name: "Bandeja", quantity: 1, total: 26_000 }],
+          total: 26_000,
+          tip: 0,
+        }}
+      />,
+    );
+    expect(html).toContain("Este documento no es una factura electrónica");
   });
 });

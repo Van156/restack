@@ -1,1 +1,17 @@
 @import "@base-template/ui/globals.css";
+
+/* Prints only the element marked `data-print-area` (a document or contingency ticket). */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  [data-print-area],
+  [data-print-area] * {
+    visibility: visible;
+  }
+  [data-print-area] {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+}

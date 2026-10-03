@@ -1,8 +1,7 @@
 import type { AppRouterClient } from "@base-template/api/routers/index";
 
+import type { DocumentKind } from "./document-choice";
 import type { PaymentValues } from "./payment-form";
-
-export type DocumentKind = "pos_equivalent" | "factura";
 
 export type CheckoutAction =
   | { type: "set_tip"; sessionId: string; amount: number }
