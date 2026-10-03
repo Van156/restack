@@ -9,6 +9,7 @@ import { ensureBill, loadBillView, lockBill, settleTimeOf } from "../../lib/bill
 import { recordAuditThrough } from "../../lib/audit-in-transaction";
 import { findOpenShift } from "../../lib/cash-shift";
 import { consumeOverride } from "../../lib/override";
+import { closeCallsOfSession } from "../../lib/waiter-call-close";
 import { hasOpenSessionAtTable } from "../../lib/table-session";
 import { loadChargeableSession, resolveChargingMemberId } from "./billing-shared";
 import { actingTokenInput, idempotencyKey } from "./orders-shared";
@@ -165,6 +166,7 @@ export async function settleCore(context: OrderContext, input: z.infer<typeof se
       .update(schema.tableSession)
       .set({ status: "settled", settledAt })
       .where(eq(schema.tableSession.id, session.id));
+    await closeCallsOfSession(tx, context.clock, session.id);
     return { ...view, status: "settled" as const, settledAt };
   });
 }

@@ -2,7 +2,7 @@
 
 Rationale behind the restaurant domain code that does not fit in a code comment. Requirements live in [`docs/prd/restaurant-management.md`](../prd/restaurant-management.md) and the vocabulary in `GLOSSARY.md`.
 
-Code: `packages/api/src/routers/restaurant/*`, `packages/api/src/lib/{override,pin,acting-token,device-auth,table-session}.ts`, `packages/db/src/schema/restaurant-*.ts`.
+Code: `packages/api/src/routers/restaurant/*`, `packages/api/src/lib/{override,pin,acting-token,device-auth,table-session,table-session-token,location-presence,waiter-call-*}.ts`, `packages/db/src/schema/restaurant-*.ts`.
 
 ## Overrides
 
@@ -177,6 +177,43 @@ Procedure: `restaurant.sync.push` (`routers/restaurant/sync.ts`; sessions in `sy
 - Original sale time: `deviceRecordedAt` is clamped to the server clock (a device clock ahead cannot post-date a sale). The sale time stored in `bill.settled_at` and `table_session.settled_at` (`settleTimeOf`) is the time of the payment that completed the Bill: the latest payment by effective time (`clientRecordedAt ?? recordedAt`), clamped to the server clock, whatever the mix of online and offline payments and the order they synced in (a Bill settled online follows the same rule, so it settles at its last payment). The DIAN document takes the Bill's `settled_at`. Reports, the Activated Location metric and the document therefore agree on the day of the sale; the server arrival time stays in `payment.recorded_at`. Chosen over a separate sale-time column because every reader of `settled_at` is already about the sale day.
 - Table metadata (name, seats, Area) is last-write-wins by device time over the whole record: `dining_table.metadata_written_at` and `metadata_write_key` hold the winning write. A tie on time goes to the greater idempotency key, so the outcome does not depend on arrival order and a replay is harmless. A losing write is `applied` with `note: "superseded"` the first time; replaying the winner, an overtaken winner or a loser is `already_applied` (a loser's key is kept in `sync_superseded_write`, as is the key of a write overtaken by a newer sync or online write). An online `tables.update` stamps the server time, so it takes part in the ordering. Needs `setup:manage` like the online procedure. Session moves use the same ordering and the same key log.
 - Document requests need a settled Bill (otherwise `CONFLICT`), default to `contingency: true`, and follow `issueDocument` (DIAN off returns the exempt receipt with `note: "exempt_receipt"`). The payload carries the original sale time. The 48 hour deadline counts from the server's receipt (see Outbox and incidents); the server never rejects a late sale, the client blocks contingency sales after 48 hours offline.
+
+## Waiter call
+
+Staff side: `packages/api/src/routers/restaurant/waiter-call*.ts` (`appRouter.restaurant.waiterCall`). Guest side: the public Hono sub-app `apps/server/src/waiter-call-routes.ts`, mounted at `/api/public/waiter-call`, over `lib/waiter-call-guest.ts`. Schema `packages/db/src/schema/restaurant-waiter-call.ts` (`waiter_call`, `staff_presence`).
+
+### Table session token
+
+- The QR encodes an HMAC-SHA256 token (`lib/table-session-token.ts`, secret `BETTER_AUTH_SECRET`, its own signing context so it never verifies as an acting token). Claims are organization, Location, Table session, QR version and expiry (12 hours): identifiers only, no personal data. The signature is compared in constant time.
+- Valid means signed, unexpired, matching the stored session (organization, Location) and carrying the session's current `token_version`. Anything else (garbage, bad signature, expired, a regenerated QR's old version) is the same `404 { status: "invalid" }`, so nothing says why or whether the session exists.
+- `waiterCall.qr` mints a token for an unsettled session; `waiterCall.regenerateQr` increments `token_version` and replaces the short code, so every earlier QR stops working, and is audited as `waiter_call.qr_regenerated` in the same transaction. Both need `order:take` and Location access.
+- The Table session is the unit of trust: a token for a settled session still verifies, but the page answers `closed`. Reopening a Bill therefore revives the QR already on the Table; regenerate it if that is not wanted.
+
+### Public routes
+
+Only two, both by token in the path and with no auth session: `GET /:token` (state) and `POST /:token` (body `{ reason }`, one of `need_something`, `cutlery_napkins`, `pay`; the page labels are "Necesito algo", "Más cubiertos o servilletas", "Quiero pagar").
+
+- State: `closed` (settled Table, "Esta mesa ya cerró. Gracias por venir."), `offline` (no Table name, no reasons, no button: "El restaurante está sin conexión. Llama a tu mesero con la mano."), or `open` with the Table name, the reasons, the Table's own call (`reason` and `open` or `on_the_way`), `cooldownUntil` and `canCall`. Nothing else leaves: no ids, menu, order, price or Staff name, and the call carries no id.
+- Create: refused (409 with `status`) as `closed`, `offline`, `call_open` or `cooldown` (with `retryAfterSeconds`); success is 201 with the new state. A malformed body or unknown reason is 400.
+- One unfinished call per Table session, enforced by a partial unique index, so two guests racing get one call and one `call_open`. Rule chosen over per-guest calls because the table is one party; `guest_fingerprint` (a hash of source and user agent, never the address) is stored for abuse follow-up only.
+- Cooldown: 30 seconds (`WAITER_CALL_COOLDOWN_MS`) from "Atendido", stored as `cooldown_until`. Settling a Bill closes its calls with no cooldown.
+- Rate limiting (injectable `RateLimiter`, per process, fixed one-minute windows, generic `429 { status: "throttled" }` with `Retry-After: 60`): per source 600 reads and 30 calls; per token 120 reads and 6 calls. Sources are generous because a restaurant shares one address and the page polls about once a second. The source limit runs first; the token limit runs after a signature and expiry check (no database), so random strings cannot fill the table of token buckets.
+
+### Location online state
+
+A Location is online when an active Paired device or a Staff client was seen within 30 seconds (`isLocationOnline`, `LOCATION_ONLINE_THRESHOLD_MS`).
+
+- Devices: `authenticateDevice` already stores `paired_device.last_seen_at` on every kitchen request.
+- Staff: `staff_presence` holds one row per member and Location, written when a Staff client polls the screens that receive calls, `orders.listOpenSessions` (floor plan) and `waiterCall.list`. It is one guarded upsert that rewrites a row at most every 10 seconds, so a 1 second poll costs no row writes. Recording on every authenticated call was rejected: an Owner reading reports would make an empty restaurant look online.
+- Offline hides the call button and refuses calls, because a call nobody can receive is worse than none.
+
+### Staff procedures
+
+- `list({ locationId })`: calls still open or on the way, oldest first, with Table, reason, status and who answered; `acknowledge({ callId })` is "Voy" (guarded `UPDATE ... WHERE status = 'open'`, records the member and time; answering one already on the way returns it unchanged, keeping the first Waiter); `resolve({ callId })` is "Atendido" (from open or on the way, records who, when and the cooldown; repeating it changes nothing). Both take an optional `actingToken` like the order procedures. Needs `order:take` and Location access. Polling at about one second; no realtime.
+
+### Closing on settle
+
+`settleCore` attends the session's unfinished calls in its transaction, so they leave the Staff list at once; the public routes refuse a settled session by its status in the request path. `startWaiterCallJob` (every 30 seconds, started by `startBackgroundJobs`) attends the calls of any settled session the request path missed.
 
 ## Product health
 

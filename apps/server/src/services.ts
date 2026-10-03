@@ -3,6 +3,7 @@ import { createBetterAuthPlatformAdmin } from "@base-template/api/platform-admin
 import { systemClock } from "@base-template/api/clock";
 import { createInvoicingProvider } from "@base-template/api/lib/invoicing/factory";
 import { startInvoicingOutboxJob } from "@base-template/api/lib/invoicing/outbox-job";
+import { startWaiterCallJob } from "@base-template/api/lib/waiter-call-job";
 import { createAuth } from "@base-template/auth";
 import type { AuditRetentionJobHandle } from "@base-template/auth/audit";
 import { createDrizzleAuditLogger, startAuditRetentionJob } from "@base-template/auth/audit";
@@ -20,7 +21,8 @@ export const authorization = createBetterAuthAuthorization(auth);
 export const platformAdmin = createBetterAuthPlatformAdmin(auth);
 
 /**
- * Starts the background jobs (the R7.6 audit retention job and the DIAN outbox drain) and returns a handle to stop them.
+ * Starts the background jobs (the R7.6 audit retention job, the DIAN outbox drain and the Waiter call
+ * closing of settled sessions) and returns a handle to stop them.
  * Deliberately not run at import: scripts and tests import this module, and a live timer must
  * never start as a side effect. Only `index.ts` calls it.
  */
@@ -31,10 +33,12 @@ export function startBackgroundJobs(): { stop: () => void } {
     ENV.AUDIT_LOG_RETENTION_DAYS,
   );
   const outboxJob = startInvoicingOutboxJob({ db, invoicing, clock: systemClock });
+  const waiterCallJob = startWaiterCallJob({ db, clock: systemClock });
   return {
     stop: () => {
       retentionJob?.stop();
       outboxJob.stop();
+      waiterCallJob.stop();
     },
   };
 }
