@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { orgProcedure, requirePermission } from "../../index";
-import { ensureBill, loadBillView, lockBill } from "../../lib/bill";
+import { ensureBill, loadBillView, lockBill, settleTimeOf } from "../../lib/bill";
 import { recordAuditThrough } from "../../lib/audit-in-transaction";
 import { findOpenShift } from "../../lib/cash-shift";
 import { consumeOverride } from "../../lib/override";
@@ -146,7 +146,7 @@ export async function settleCore(context: OrderContext, input: z.infer<typeof se
         message: `The Bill is not fully paid (balance ${view.balanceDue} COP).`,
       });
     }
-    const now = context.clock.now();
+    const settledAt = settleTimeOf(view.payments, context.clock.now());
     await tx
       .update(schema.bill)
       .set({
@@ -155,15 +155,15 @@ export async function settleCore(context: OrderContext, input: z.infer<typeof se
         tax: view.tax,
         discountTotal: view.discountTotal,
         total: view.total,
-        settledAt: now,
+        settledAt,
         settledByMemberId: memberId,
       })
       .where(eq(schema.bill.id, bill.id));
     await tx
       .update(schema.tableSession)
-      .set({ status: "settled", settledAt: now })
+      .set({ status: "settled", settledAt })
       .where(eq(schema.tableSession.id, session.id));
-    return { ...view, status: "settled" as const, settledAt: now };
+    return { ...view, status: "settled" as const, settledAt };
   });
 }
 

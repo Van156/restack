@@ -97,6 +97,35 @@ describe.skipIf(!reachable)("restaurant reports: daily by tender", () => {
     expect((await daily()).billCount).toBe(1);
   });
 
+  test("an offline sale made yesterday and settled today counts on the day of the sale", async () => {
+    harness.clock.setNow(NOON);
+    const tableSessionId = await scenario.openSession();
+    const cashier = await scenario.as("cashierA");
+    const soldAt = new Date("2026-10-01T18:00:00.000Z");
+    harness.clock.setNow(new Date("2026-10-03T15:00:00.000Z"));
+    await call(
+      restaurantRouter.billing.recordPayment,
+      {
+        tableSessionId,
+        tender: "cash",
+        amount: 35_000,
+        registeredOffline: true,
+        clientRecordedAt: soldAt,
+        idempotencyKey: scenario.nextKey(),
+      },
+      { context: cashier },
+    );
+    const settled = await call(
+      restaurantRouter.billing.settle,
+      { tableSessionId },
+      { context: cashier },
+    );
+
+    expect(settled.settledAt).toEqual(soldAt);
+    expect(await daily({ date: "2026-10-01" })).toMatchObject({ billCount: 1, salesTotal: 35_000 });
+    expect(await daily({ date: "2026-10-03" })).toMatchObject({ billCount: 0 });
+  });
+
   test("an open Bill does not count", async () => {
     harness.clock.setNow(NOON);
     const openId = await scenario.openSession();

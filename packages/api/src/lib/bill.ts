@@ -58,6 +58,21 @@ export type BillView = {
   settledAt: Date | null;
 };
 
+/**
+ * When a Bill settles: the server clock, unless a payment carries the device time of an offline
+ * sale. Then the sale time (latest payment by device time) wins, never later than `now`, so
+ * reports and the DIAN document keep the original day. See docs/architecture/restaurant.md#sync.
+ */
+export function settleTimeOf(payments: BillView["payments"], now: Date): Date {
+  if (!payments.some((payment) => payment.clientRecordedAt)) {
+    return now;
+  }
+  const latest = Math.max(
+    ...payments.map((payment) => (payment.clientRecordedAt ?? payment.recordedAt).getTime()),
+  );
+  return new Date(Math.min(latest, now.getTime()));
+}
+
 type SessionRef = { id: string; locationId: string };
 
 /** The Bill row of a Table session, if one exists. */
