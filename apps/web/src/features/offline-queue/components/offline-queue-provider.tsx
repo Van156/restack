@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useReducer, useState, type ReactNode } from "react";
 
-import { client } from "@/app/orpc";
 import { useRuntime } from "@/shared/hooks/use-runtime";
 
 import { connectivityReducer, initialConnectivity, isOnline } from "../lib/connectivity";
@@ -9,8 +8,7 @@ import type { OfflineState } from "../lib/offline-window";
 import { openOfflineQueue } from "../lib/queue";
 import type { EnqueueInput, OfflineQueue } from "../lib/queue";
 import { createLocalStorageAdapter, DEFAULT_STORAGE_KEY } from "../lib/storage";
-import { createSyncTransport } from "../lib/sync-transport";
-import type { QueueRecord } from "../lib/types";
+import type { QueueRecord, SyncTransport } from "../lib/types";
 
 export const SYNC_INTERVAL_MS = 5000;
 
@@ -36,9 +34,12 @@ const Context = createContext<OfflineQueueApi | null>(null);
  */
 export function OfflineQueueProvider({
   organizationId,
+  transport,
   children,
 }: {
   organizationId: string;
+  /** Where records are pushed; the app passes `createSyncTransport(client.restaurant.sync)`. */
+  transport: SyncTransport;
   children: ReactNode;
 }) {
   const { clock, timer } = useRuntime();
@@ -54,7 +55,7 @@ export function OfflineQueueProvider({
     void openOfflineQueue({
       storage: createLocalStorageAdapter({ key: `${DEFAULT_STORAGE_KEY}:${organizationId}` }),
       clock,
-      transport: createSyncTransport(client.restaurant.sync),
+      transport,
     }).then((opened) => {
       if (!cancelled) {
         // An incident left open by the last session stays open until a request proves the server is back.
@@ -67,7 +68,7 @@ export function OfflineQueueProvider({
     return () => {
       cancelled = true;
     };
-  }, [organizationId, clock]);
+  }, [organizationId, clock, transport]);
 
   useEffect(() => {
     const goOnline = () => dispatch({ type: "browser_online" });

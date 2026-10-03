@@ -3,10 +3,15 @@ import { Tabs, TabsList, TabsTrigger } from "@base-template/ui/components/tabs";
 import { useMemo, useState } from "react";
 
 import { authClient } from "@/app/auth-client";
+import { client } from "@/app/orpc";
 import { CanGate } from "@/features/access-control";
 import { ActingBar, ActingMemberProvider } from "@/features/acting-member";
 import { LocationScope, type LocationView } from "@/features/locations";
-import { OfflineQueueProvider, useOfflineQueue } from "@/features/offline-queue";
+import {
+  OfflineQueueProvider,
+  createSyncTransport,
+  useOfflineQueue,
+} from "@/features/offline-queue";
 import EmptyState from "@/shared/components/feedback/empty-state";
 import Loader from "@/shared/components/feedback/loader";
 import LoadError from "@/shared/components/feedback/load-error";
@@ -28,6 +33,8 @@ type PageProps = {
   search: WaiterSearch;
   onSearchChange: (search: WaiterSearch) => void;
 };
+
+const syncTransport = createSyncTransport(client.restaurant.sync);
 
 const VIEWS = [
   { view: "mesas", label: "Mesas" },
@@ -61,7 +68,7 @@ function WaiterProviders({ children }: { children: React.ReactNode }) {
     return <Loader />;
   }
   return (
-    <OfflineQueueProvider organizationId={organization.id}>
+    <OfflineQueueProvider organizationId={organization.id} transport={syncTransport}>
       <ActingMemberProvider>{children}</ActingMemberProvider>
     </OfflineQueueProvider>
   );
