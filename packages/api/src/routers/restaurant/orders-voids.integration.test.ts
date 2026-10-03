@@ -32,7 +32,7 @@ describe.skipIf(!reachable)("restaurant orders: voids, discounts and guards", ()
     await harness.reset();
     seed = await harness.seedRestaurant();
     service = await seedService(harness, seed);
-    for (const key of ["admin", "waiterA"] as const) {
+    for (const key of ["admin", "owner", "waiterA"] as const) {
       await call(restaurantRouter.staff.setPin, { pin: "4821" }, { context: await as(key) });
     }
     sessionId = (
@@ -78,6 +78,7 @@ describe.skipIf(!reachable)("restaurant orders: voids, discounts and guards", ()
     action: "void_line" | "discount",
     target: string,
     requester: keyof RestaurantSeed["staff"] = "waiterA",
+    approver: keyof RestaurantSeed["staff"] = "admin",
   ) {
     const { overrideId } = await call(
       restaurantRouter.overrides.mint,
@@ -85,7 +86,7 @@ describe.skipIf(!reachable)("restaurant orders: voids, discounts and guards", ()
         locationId: seed.locations.a,
         action,
         target,
-        approverMemberId: seed.staff.admin.memberId,
+        approverMemberId: seed.staff[approver].memberId,
         approverPin: "4821",
       },
       { context: await as(requester) },
@@ -139,7 +140,11 @@ describe.skipIf(!reachable)("restaurant orders: voids, discounts and guards", ()
         approverMemberId: seed.staff.admin.memberId,
         overrideId,
       });
-      expect(harness.auditLogger.events.some((e) => e.action === "override.used")).toBe(true);
+      const used = await harness.db
+        .select()
+        .from(schema.auditLog)
+        .where(eq(schema.auditLog.action, "override.used"));
+      expect(used).toHaveLength(1);
 
       // Single use: the same Override cannot void another sent line.
       const other = await line(service.items.fries);
@@ -188,7 +193,7 @@ describe.skipIf(!reachable)("restaurant orders: voids, discounts and guards", ()
 
     test("the void is attributed to the member who switched in", async () => {
       const sent = await line();
-      const overrideId = await mintOverride("void_line", sent.id, "admin");
+      const overrideId = await mintOverride("void_line", sent.id, "admin", "owner");
       const { actingToken } = await call(
         restaurantRouter.staff.switchIn,
         { locationId: seed.locations.a, memberId: seed.staff.waiterA.memberId, pin: "4821" },

@@ -1,9 +1,8 @@
 import * as schema from "@base-template/db/schema";
+import { auditLog } from "@base-template/db/schema/audit";
 import type { OverrideAction } from "@base-template/db/schema/restaurant-staff";
 import { ORPCError } from "@orpc/server";
 import { and, eq, gt, isNull } from "drizzle-orm";
-
-import type { AuditLogger } from "@base-template/auth/audit";
 
 import type { Clock } from "../context";
 import type { DbExecutor } from "./executor";
@@ -29,7 +28,7 @@ export type ConsumeOverrideInput = {
  * transaction so the spend rolls back with the action it authorized. Returns the approver.
  */
 export async function consumeOverride(
-  deps: { db: DbExecutor; auditLogger: AuditLogger; clock: Clock },
+  deps: { db: DbExecutor; clock: Clock },
   input: ConsumeOverrideInput,
 ): Promise<{ approverMemberId: string }> {
   const now = deps.clock.now();
@@ -54,7 +53,8 @@ export async function consumeOverride(
     });
   }
 
-  await deps.auditLogger.record({
+  // Written through the caller's executor, not the audit port, so it rolls back with the spend.
+  await deps.db.insert(auditLog).values({
     scope: "organization",
     organizationId: input.organizationId,
     actorUserId: input.actorUserId,

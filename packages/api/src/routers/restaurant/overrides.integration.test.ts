@@ -60,12 +60,19 @@ describe.skipIf(!reachable)("restaurant overrides", () => {
     );
   }
 
+  function usedAuditRows() {
+    return harness.db
+      .select()
+      .from(schema.auditLog)
+      .where(eq(schema.auditLog.action, "override.used"));
+  }
+
   function consume(
     overrideId: string,
     overrides: Partial<Parameters<typeof consumeOverride>[1]> = {},
   ) {
     return consumeOverride(
-      { db: harness.db, auditLogger: harness.auditLogger, clock: harness.clock },
+      { db: harness.db, clock: harness.clock },
       {
         organizationId: seed.organizationId,
         actorUserId: seed.staff.waiterA.userId,
@@ -130,8 +137,31 @@ describe.skipIf(!reachable)("restaurant overrides", () => {
     const { overrideId } = await mint("waiterA");
     const used = await consume(overrideId);
     expect(used.approverMemberId).toBe(seed.staff.admin.memberId);
-    expect(harness.auditLogger.events.some((e) => e.action === "override.used")).toBe(true);
+    expect(await usedAuditRows()).toHaveLength(1);
     expect(await codeOf(consume(overrideId))).toBe("FORBIDDEN");
+  });
+
+  test("a rolled-back transaction leaves the Override unspent and no override.used row", async () => {
+    const { overrideId } = await mint("waiterA");
+    const rollback = new Error("rollback");
+    await expect(
+      harness.db.transaction(async (tx) => {
+        await consumeOverride(
+          { db: tx, clock: harness.clock },
+          {
+            organizationId: seed.organizationId,
+            actorUserId: seed.staff.waiterA.userId,
+            overrideId,
+            locationId: seed.locations.a,
+            action: "void_line",
+            target: "line-1",
+          },
+        );
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+    expect(await usedAuditRows()).toHaveLength(0);
+    expect((await consume(overrideId)).approverMemberId).toBe(seed.staff.admin.memberId);
   });
 
   test("an Override is refused after it expires", async () => {

@@ -63,7 +63,7 @@ export const orderVoidsRouter = {
         const approver =
           sent && input.overrideId
             ? await consumeOverride(
-                { db: tx, auditLogger: context.auditLogger, clock: context.clock },
+                { db: tx, clock: context.clock },
                 {
                   organizationId: context.org.id,
                   actorUserId: context.session.user.id,
@@ -144,7 +144,7 @@ export const orderVoidsRouter = {
 
       const created = await context.db.transaction(async (tx) => {
         const { approverMemberId } = await consumeOverride(
-          { db: tx, auditLogger: context.auditLogger, clock: context.clock },
+          { db: tx, clock: context.clock },
           {
             organizationId: context.org.id,
             actorUserId: context.session.user.id,
