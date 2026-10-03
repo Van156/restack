@@ -55,13 +55,14 @@ export function useKitchenBoard(source: KitchenSource, onRejected?: () => void) 
     },
   });
 
-  const now = feed.receivedAt ?? clock.now();
+  const now = clock.now();
+  const sincePollMs = feed.receivedAt ? Math.max(0, now.getTime() - feed.receivedAt.getTime()) : 0;
   const tickets = useMemo(
     () => (feed.data ? applyAdvances(feed.data, advanced) : undefined),
     [feed.data, advanced],
   );
-  const columns = useMemo(() => (tickets ? groupBoard(tickets, now) : []), [tickets, now]);
-  const metrics = useMemo(() => boardMetrics(tickets ?? [], now), [tickets, now]);
+  const columns = tickets ? groupBoard(tickets, sincePollMs) : [];
+  const metrics = boardMetrics(tickets ?? [], sincePollMs);
 
   async function advance(ticketId: string, status: Exclude<TicketStatus, "nuevo">) {
     if (inFlight.current.has(ticketId)) {

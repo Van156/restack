@@ -81,6 +81,35 @@ describe("TicketCard", () => {
     expect(html).toContain("9 min");
   });
 
+  test("shows each measured step with its time, marking the one still running", () => {
+    const html = renderToStaticMarkup(
+      <TicketCard
+        station="Cocina"
+        table="Mesa 7"
+        status="listo"
+        ageMs={20 * 60_000}
+        lines={[]}
+        timings={[
+          { label: "Preparación", ms: 11 * 60_000 },
+          { label: "Espera de recogida", ms: 3 * 60_000, running: true },
+        ]}
+      />,
+    );
+    expect(html).toContain("Preparación");
+    expect(html).toContain("11 min");
+    expect(html).toContain("Espera de recogida");
+    expect(html).toContain("3 min");
+    expect(html).toContain("en curso");
+    expect(html.match(/en curso/g)).toHaveLength(1);
+  });
+
+  test("shows no timings block without timings", () => {
+    const html = renderToStaticMarkup(
+      <TicketCard station="Bar" table="Mesa 2" status="nuevo" ageMs={0} lines={[]} />,
+    );
+    expect(html).not.toContain("<dl");
+  });
+
   test("flags a voided line as a cancellation and renders the advance action only when given", () => {
     const lines = [{ id: "a", quantity: 1, name: "Arepa", voided: true }];
     const without = renderToStaticMarkup(

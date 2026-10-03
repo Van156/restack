@@ -15,6 +15,10 @@ const tickets: BoardTicket[] = [
     tableName: "Mesa 4",
     sentByName: "Ana",
     sentAt: new Date(NOW.getTime() - 7 * 60_000),
+    ageMs: 7 * 60_000,
+    startedAt: null,
+    readyAt: null,
+    deliveredAt: null,
     lines: [
       {
         orderLineId: "l1",
@@ -34,7 +38,14 @@ const tickets: BoardTicket[] = [
       },
     ],
   },
-  { ...ticketBase("t2", "listo"), tableName: "Mesa 2" },
+  {
+    ...ticketBase("t2", "listo"),
+    tableName: "Mesa 2",
+    sentAt: new Date(NOW.getTime() - 15 * 60_000),
+    ageMs: 15 * 60_000,
+    startedAt: new Date(NOW.getTime() - 10 * 60_000),
+    readyAt: new Date(NOW.getTime() - 4 * 60_000),
+  },
 ];
 
 function ticketBase(id: string, status: BoardTicket["status"]): BoardTicket {
@@ -45,6 +56,10 @@ function ticketBase(id: string, status: BoardTicket["status"]): BoardTicket {
     tableName: "Mesa",
     sentByName: null,
     sentAt: NOW,
+    ageMs: 0,
+    startedAt: null,
+    readyAt: null,
+    deliveredAt: null,
     lines: [],
   };
 }
@@ -52,8 +67,8 @@ function ticketBase(id: string, status: BoardTicket["status"]): BoardTicket {
 function render(connection = offlineStatus(null, NOW), advanceError: string | null = null) {
   return renderToStaticMarkup(
     <KitchenBoardView
-      columns={groupBoard(tickets, NOW)}
-      metrics={boardMetrics(tickets, NOW)}
+      columns={groupBoard(tickets, 0)}
+      metrics={boardMetrics(tickets, 0)}
       connection={connection}
       advanceError={advanceError}
       onAdvance={() => {}}
@@ -72,6 +87,14 @@ describe("KitchenBoardView", () => {
     expect(html).toContain("Sin cebolla");
     expect(html).toContain("Bien cocida");
     expect(html).toContain("Anulado, no preparar");
+  });
+
+  test("cards show the preparation time and the pickup wait once they exist", () => {
+    const html = render();
+    expect(html).toContain("Preparación");
+    expect(html).toContain("6 min");
+    expect(html).toContain("Espera de recogida");
+    expect(html).toContain("4 min");
   });
 
   test("offers the next step on each open card", () => {

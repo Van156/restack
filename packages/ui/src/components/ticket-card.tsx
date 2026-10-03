@@ -13,6 +13,13 @@ type TicketCardLine = {
   voided?: boolean;
 };
 
+type TicketCardTiming = {
+  label: string;
+  ms: number;
+  /** The step has not ended yet, so the time is still counting. */
+  running?: boolean;
+};
+
 type TicketCardProps = {
   station: string;
   table: string;
@@ -21,13 +28,18 @@ type TicketCardProps = {
   /** Time since the Ticket was sent, as measured by the server. */
   ageMs: number;
   lines: readonly TicketCardLine[];
+  /** Measured steps, for example preparation time and pickup wait. */
+  timings?: readonly TicketCardTiming[];
   /** Label of the one-tap action that moves the Ticket forward; omitted for the last status. */
   advanceLabel?: string;
   onAdvance?: () => void;
   className?: string;
 };
 
-/** Kitchen card for a Ticket: Station, Table, lines (voids flagged), status and age since sent. */
+/**
+ * Kitchen card for a Ticket: Station, Table, lines (voids flagged), status, age since sent and,
+ * when given, the time each step took.
+ */
 function TicketCard({
   station,
   table,
@@ -35,6 +47,7 @@ function TicketCard({
   status,
   ageMs,
   lines,
+  timings,
   advanceLabel,
   onAdvance,
   className,
@@ -59,6 +72,19 @@ function TicketCard({
           <span className="text-muted-foreground tabular-nums">{formatAge(ageMs)}</span>
         </div>
       </header>
+      {timings?.length ? (
+        <dl className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+          {timings.map((timing) => (
+            <div key={timing.label} className="flex gap-1">
+              <dt>{timing.label}</dt>
+              <dd className="tabular-nums">
+                {formatAge(timing.ms)}
+                {timing.running ? " (en curso)" : ""}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
       <ul className="flex flex-col gap-2">
         {lines.map((line) => (
           <li
@@ -90,4 +116,4 @@ function TicketCard({
 }
 
 export { TicketCard };
-export type { TicketCardLine, TicketCardProps };
+export type { TicketCardLine, TicketCardProps, TicketCardTiming };

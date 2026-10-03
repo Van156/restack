@@ -4,7 +4,7 @@ import { TicketCard } from "@base-template/ui/components/ticket-card";
 import { formatAge } from "@base-template/ui/lib/format-age";
 import type { OfflineStatus } from "@base-template/ui/lib/offline-banner-state";
 
-import type { BoardColumn, BoardMetrics, TicketStatus } from "../lib/board";
+import type { BoardCard, BoardColumn, BoardMetrics, TicketStatus } from "../lib/board";
 
 const OFFLINE_MESSAGE = "Pide las comandas en voz alta";
 
@@ -80,6 +80,7 @@ export default function KitchenBoardView({
                     status={card.status}
                     ageMs={card.ageMs}
                     lines={card.lines}
+                    timings={timingsOf(card)}
                     advanceLabel={offline ? undefined : advance?.label}
                     onAdvance={advance ? () => onAdvance(card.id, advance.status) : undefined}
                     className="text-base [&_button]:h-14 [&_button]:text-lg"
@@ -92,6 +93,14 @@ export default function KitchenBoardView({
       </div>
     </div>
   );
+}
+
+/** The measured steps of a card, in the order they happen. */
+function timingsOf(card: BoardCard) {
+  return [
+    ...(card.preparation ? [{ label: "Preparación", ...card.preparation }] : []),
+    ...(card.pickupWait ? [{ label: "Espera de recogida", ...card.pickupWait }] : []),
+  ];
 }
 
 function Figure({ label, value }: { label: string; value: string }) {

@@ -15,6 +15,10 @@ const tickets: BoardTicket[] = [
     tableName: "Mesa 4",
     sentByName: "Ana",
     sentAt: minutesAgo(7),
+    ageMs: 7 * 60_000,
+    startedAt: null,
+    readyAt: null,
+    deliveredAt: null,
     lines: [
       {
         orderLineId: "l1",
@@ -41,6 +45,10 @@ const tickets: BoardTicket[] = [
     tableName: "Mesa 2",
     sentByName: "Luis",
     sentAt: minutesAgo(14),
+    ageMs: 14 * 60_000,
+    startedAt: minutesAgo(9),
+    readyAt: null,
+    deliveredAt: null,
     lines: [
       {
         orderLineId: "l3",
@@ -59,6 +67,10 @@ const tickets: BoardTicket[] = [
     tableName: "Mesa 9",
     sentByName: null,
     sentAt: minutesAgo(5),
+    ageMs: 5 * 60_000,
+    startedAt: minutesAgo(4),
+    readyAt: minutesAgo(1),
+    deliveredAt: null,
     lines: [
       {
         orderLineId: "l4",
@@ -78,8 +90,8 @@ const meta = {
   tags: ["autodocs"],
   parameters: { layout: "fullscreen" },
   args: {
-    columns: groupBoard(tickets, NOW),
-    metrics: boardMetrics(tickets, NOW),
+    columns: groupBoard(tickets, 0),
+    metrics: boardMetrics(tickets, 0),
     connection: offlineStatus(null, NOW),
     onAdvance: () => {},
   },
@@ -91,7 +103,7 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 
 export const Empty: Story = {
-  args: { columns: groupBoard([], NOW), metrics: boardMetrics([], NOW) },
+  args: { columns: groupBoard([], 0), metrics: boardMetrics([], 0) },
 };
 
 export const Offline: Story = {

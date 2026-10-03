@@ -19,8 +19,16 @@ export type BoardTicket = {
   tableName: string;
   sentByName: string | null;
   sentAt: Date;
+  /** Server time since `sentAt` at the moment it answered the poll. */
+  ageMs: number;
+  startedAt: Date | null;
+  readyAt: Date | null;
+  deliveredAt: Date | null;
   lines: readonly BoardTicketLine[];
 };
+
+/** How long a step took, or has taken so far (`running`). */
+export type BoardTiming = { ms: number; running: boolean };
 
 export type AdvanceStep = { status: Exclude<TicketStatus, "nuevo">; label: string };
 
@@ -40,6 +48,10 @@ export type BoardCard = {
   tableName: string;
   waiter: string | null;
   ageMs: number;
+  /** Start to ready; null until the Ticket is started. */
+  preparation: BoardTiming | null;
+  /** Ready to delivered; null until the Ticket is ready. */
+  pickupWait: BoardTiming | null;
   lines: BoardCardLine[];
   advance: AdvanceStep | null;
 };
@@ -65,22 +77,40 @@ export function advanceTarget(status: TicketStatus): AdvanceStep | null {
   return NEXT_STEP[status];
 }
 
-function ageOf(ticket: BoardTicket, now: Date): number {
-  return Math.max(0, now.getTime() - ticket.sentAt.getTime());
+/**
+ * Age of a Ticket: the server's own measure at the poll plus the time that passed on this device
+ * since the poll arrived. The device clock is never compared with the server's `sentAt`.
+ */
+function ageOf(ticket: BoardTicket, sincePollMs: number): number {
+  return Math.max(0, ticket.ageMs + sincePollMs);
+}
+
+/** Start to ready, and ready to delivered, measured on the server's clock where they are running. */
+function timingsOf(ticket: BoardTicket, sincePollMs: number) {
+  const serverNow = ticket.sentAt.getTime() + ageOf(ticket, sincePollMs);
+  const between = (from: Date | null, to: Date | null): BoardTiming | null =>
+    from === null
+      ? null
+      : { ms: Math.max(0, (to?.getTime() ?? serverNow) - from.getTime()), running: to === null };
+  return {
+    preparation: between(ticket.startedAt, ticket.readyAt),
+    pickupWait: between(ticket.readyAt, ticket.deliveredAt),
+  };
 }
 
 function byOldestFirst(a: BoardTicket, b: BoardTicket): number {
   return a.sentAt.getTime() - b.sentAt.getTime() || a.id.localeCompare(b.id);
 }
 
-function toCard(ticket: BoardTicket, now: Date): BoardCard {
+function toCard(ticket: BoardTicket, sincePollMs: number): BoardCard {
   return {
     id: ticket.id,
     status: ticket.status,
     stationName: ticket.stationName,
     tableName: ticket.tableName,
     waiter: ticket.sentByName,
-    ageMs: ageOf(ticket, now),
+    ageMs: ageOf(ticket, sincePollMs),
+    ...timingsOf(ticket, sincePollMs),
     advance: advanceTarget(ticket.status),
     lines: ticket.lines.map((line) => ({
       id: line.orderLineId,
@@ -95,16 +125,16 @@ function toCard(ticket: BoardTicket, now: Date): BoardCard {
 
 /**
  * The four status columns. Open columns list the oldest Ticket first (it is the one to cook next);
- * delivered ones list the most recent first. Age is measured against the injected `now`.
+ * delivered ones list the most recent first. `sincePollMs` is the time since the poll arrived.
  */
-export function groupBoard(tickets: readonly BoardTicket[], now: Date): BoardColumn[] {
+export function groupBoard(tickets: readonly BoardTicket[], sincePollMs: number): BoardColumn[] {
   return COLUMN_ORDER.map((status) => {
     const inColumn = tickets.filter((ticket) => ticket.status === status).toSorted(byOldestFirst);
     const ordered = status === "entregado" ? inColumn.toReversed() : inColumn;
     return {
       status,
       label: statusLabel("ticket", status),
-      cards: ordered.map((ticket) => toCard(ticket, now)),
+      cards: ordered.map((ticket) => toCard(ticket, sincePollMs)),
     };
   });
 }
@@ -121,13 +151,14 @@ export type BoardMetrics = {
  * Figures derived from the listed Tickets only. The full timing metrics (`kitchen.metrics`) need
  * `report:read`, which a Paired device does not hold.
  */
-export function boardMetrics(tickets: readonly BoardTicket[], now: Date): BoardMetrics {
+export function boardMetrics(tickets: readonly BoardTicket[], sincePollMs: number): BoardMetrics {
   const waiting = tickets.filter((ticket) => ticket.status === "nuevo");
   return {
     nuevo: waiting.length,
     preparando: tickets.filter((ticket) => ticket.status === "preparando").length,
     listo: tickets.filter((ticket) => ticket.status === "listo").length,
-    oldestWaitingMs: waiting.length === 0 ? null : Math.max(...waiting.map((t) => ageOf(t, now))),
+    oldestWaitingMs:
+      waiting.length === 0 ? null : Math.max(...waiting.map((t) => ageOf(t, sincePollMs))),
   };
 }
 

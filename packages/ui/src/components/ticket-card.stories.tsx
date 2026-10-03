@@ -51,4 +51,16 @@ export const WithVoidedLine: Story = {
   },
 };
 
+export const WithTimings: Story = {
+  args: {
+    status: "listo",
+    ageMs: 20 * 60_000,
+    advanceLabel: "Marcar entregado",
+    timings: [
+      { label: "Preparación", ms: 11 * 60_000 },
+      { label: "Espera de recogida", ms: 3 * 60_000, running: true },
+    ],
+  },
+};
+
 export const LongWait: Story = { args: { ageMs: 75 * 60_000 } };
