@@ -8,6 +8,7 @@ import { locationsRouter } from "./locations";
 import { menuRouter } from "./menu";
 import { ordersRouter } from "./orders";
 import { overridesRouter } from "./overrides";
+import { planRouter } from "./plan";
 import { setupRouter } from "./setup";
 import { staffRouter } from "./staff";
 import { stationsRouter } from "./stations";
@@ -25,6 +26,7 @@ export const restaurantRouter = {
   billing: billingRouter,
   cashShift: cashShiftRouter,
   dian: dianRouter,
+  plan: planRouter,
   kitchen: kitchenRouter,
   devices: devicesRouter,
   areas: areasRouter,

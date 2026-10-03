@@ -14,7 +14,9 @@ import {
 import { member, organization, user } from "./auth";
 
 /** Commercial plan of a Location: Esencial (no DIAN documents) or Completo (spec "Plans and trial"). */
-export const locationPlan = pgEnum("location_plan", ["esencial", "completo"]);
+export const LOCATION_PLANS = ["esencial", "completo"] as const;
+export type LocationPlan = (typeof LOCATION_PLANS)[number];
+export const locationPlan = pgEnum("location_plan", LOCATION_PLANS);
 
 /**
  * A Location (Sede) of a Restaurant organization. Every Location-scoped row carries its

@@ -139,3 +139,11 @@ Procedures: `cash-shift-tip-beneficiaries.ts` and `cash-shift-tip-distribution.t
 - The exclusion is re-checked at distribution: a configured member who became Owner or Administrator since is dropped from the list, and agreed percents of the rest keep their proportions and are rescaled to 100 (largest remainder). If nobody is left, the default group applies.
 - If nobody is eligible even then, close still succeeds and stores nothing (no audit). `distributeTips` (`cashShift:manage`, closed shift) then computes it once beneficiaries are configured (`setTipBeneficiaries` stays open while nothing is distributed); with a stored distribution it just returns it, with no second audit event. It returns `PRECONDITION_FAILED` while nobody is eligible.
 - Report: `tipDistributionReport` takes a shift, or `from` and `to` Bogota business days (inclusive) for shifts closed in that period. Only distributed shifts appear; each person is summed across them (by member, or by name for people without an account).
+
+## Plans and trial
+
+Procedures: `packages/api/src/routers/restaurant/plan.ts` (`appRouter.restaurant.plan`); pure helpers in `packages/api/src/lib/plan.ts`. Every procedure needs `subscription:manage` (Owner only), so the Administrator is denied.
+
+- Plan (`esencial`, `completo`) and trial end are fields on the Location. `plan.list` returns both per Location with the derived trial state (`none`, `active`, `expired`, started days left) and `dianAllowed` (`planAllowsDian`, the same gate the issuing path uses). Trial state is computed from the stored end and the injected clock; nothing is written when a trial lapses.
+- `plan.set` changes one Location's Plan and audits `plan.changed` (previous and new Plan) in the same transaction. Setting the current Plan again changes and audits nothing. It never touches the trial end: an Esencial Location keeps DIAN until its trial ends.
+- `plan.documentCounts` reads `dian_document_counter` (Bogota month, default the current one) per Location, zero when no document was issued. `overFairUse` is true above 5.000; it is information for the platform operator, never a stop.
