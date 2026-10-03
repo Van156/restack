@@ -1,3 +1,4 @@
+import type { Database } from "@base-template/db";
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import type { BetterAuthPlugin } from "better-auth";
@@ -6,6 +7,7 @@ import * as z from "zod";
 
 import { extractRequestMeta } from "../audit/request-context";
 import type { AuditLogger } from "../audit/types";
+import { applyInvitationLocations } from "../invitation-locations";
 import {
   hashInvitationToken,
   invitationSignUpIdentifier,
@@ -40,7 +42,7 @@ const invalidInvitationTokenError = () =>
  * email comes from the invitation, never the client; the account is created verified.
  * See docs/architecture/auth.md#invitation-sign-up-flow
  */
-export function invitationSignUpPlugin(auditLogger: AuditLogger) {
+export function invitationSignUpPlugin(auditLogger: AuditLogger, database: Database) {
   return {
     id: "invitation-sign-up",
     endpoints: {
@@ -128,6 +130,7 @@ export function invitationSignUpPlugin(auditLogger: AuditLogger) {
           let createdUser:
             | Awaited<ReturnType<typeof ctx.context.internalAdapter.createUser>>
             | undefined;
+          let createdMember: { id: string } | undefined;
           try {
             createdUser = await ctx.context.internalAdapter.createUser(
               { email, name, emailVerified: true },
@@ -139,7 +142,7 @@ export function invitationSignUpPlugin(auditLogger: AuditLogger) {
               accountId: createdUser.id,
               password: hash,
             });
-            await ctx.context.adapter.create({
+            createdMember = await ctx.context.adapter.create<{ id: string }>({
               model: "member",
               data: {
                 organizationId: invitation.organizationId,
@@ -191,6 +194,12 @@ export function invitationSignUpPlugin(auditLogger: AuditLogger) {
           const organization = await ctx.context.adapter.findOne<{ name: string }>({
             model: "organization",
             where: [{ field: "id", value: invitation.organizationId }],
+          });
+          await applyInvitationLocations(database, auditLogger, {
+            invitationId: invitation.id,
+            organizationId: invitation.organizationId,
+            memberId: createdMember.id,
+            actorUserId: createdUser.id,
           });
           const { ip, userAgent } = extractRequestMeta(ctx.headers ?? null);
           await auditLogger.record({

@@ -6,7 +6,7 @@ import type { BetterAuthPlugin } from "better-auth";
 import { getOAuthState } from "better-auth/api";
 import { admin } from "better-auth/plugins/admin";
 import { organization } from "better-auth/plugins/organization";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 
 import { createAccountSecurity } from "./account-security";
 import type { AccountSecurityEvents } from "./account-security";
@@ -25,9 +25,10 @@ import {
   TARGET_REACHED_MAXIMUM_NUMBER_OF_ORGANIZATIONS,
 } from "./org-limit";
 import { hasOwnerRole } from "./owner-role";
-import { isBuiltInOrgRole, orgAc, orgRoles, platformAc, platformRoles } from "./permissions";
-import type { PermissionsRecord } from "./permissions";
+import { orgAc, orgRoles, platformAc, platformRoles } from "./permissions";
+import { applyInvitationLocations } from "./invitation-locations";
 import { invitationSignUpPlugin } from "./plugins/invitation-sign-up";
+import { includesAllPermissions, resolveOrgRolePermissions } from "./role-permissions";
 import { resolveGoogleCredentials } from "./social-providers";
 import type { SocialProviderEnv } from "./social-providers";
 
@@ -44,71 +45,6 @@ const INVITATION_EXPIRES_IN_SECONDS = 60 * 60 * 48;
 
 /** Maximum custom roles a single organization may define (R4.8). */
 const MAXIMUM_ROLES_PER_ORGANIZATION = 25;
-
-/** Merges `source`'s `feature: [actions]` entries into `target` (in place, deduped via `Set`). */
-function mergePermissionsInto(
-  target: Record<string, Set<string>>,
-  source: PermissionsRecord,
-): void {
-  for (const [feature, actions] of Object.entries(source)) {
-    const set = target[feature] ?? (target[feature] = new Set());
-    for (const action of actions) {
-      set.add(action);
-    }
-  }
-}
-
-/**
- * Aggregates the permissions of comma-separated built-in or custom org roles. Unknown names grant
- * nothing; better-auth already validates role names before `beforeCreateInvitation` runs.
- */
-async function resolveOrgRolePermissions(
-  database: Database,
-  organizationId: string,
-  roleField: string,
-): Promise<Record<string, string[]>> {
-  const roleNames = roleField
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  const permissions: Record<string, Set<string>> = {};
-  for (const name of roleNames) {
-    if (isBuiltInOrgRole(name)) {
-      mergePermissionsInto(permissions, orgRoles[name].statements);
-    }
-  }
-
-  const customRoleNames = roleNames.filter((name) => !isBuiltInOrgRole(name));
-  if (customRoleNames.length > 0) {
-    const customRoles = await database
-      .select({ permission: schema.organizationRole.permission })
-      .from(schema.organizationRole)
-      .where(
-        and(
-          eq(schema.organizationRole.organizationId, organizationId),
-          inArray(schema.organizationRole.role, customRoleNames),
-        ),
-      );
-    for (const row of customRoles) {
-      mergePermissionsInto(permissions, JSON.parse(row.permission) as PermissionsRecord);
-    }
-  }
-
-  return Object.fromEntries(
-    Object.entries(permissions).map(([feature, actions]) => [feature, [...actions]]),
-  );
-}
-
-/** Whether every `feature:action` pair in `required` is also present in `granted` (R2.2 superset check). */
-function includesAllPermissions(
-  granted: Record<string, string[]>,
-  required: Record<string, string[]>,
-): boolean {
-  return Object.entries(required).every(([feature, actions]) =>
-    actions.every((action) => granted[feature]?.includes(action) ?? false),
-  );
-}
 
 /** Reads a member's role field for one organization, or `null` when they are not a member. */
 async function findMemberRole(
@@ -492,7 +428,13 @@ export function createAuth(
             });
           },
           // Also recorded directly by `invitation-sign-up.ts`, which has no native hook (R2.4).
-          afterAcceptInvitation: async ({ invitation, user, organization }) => {
+          afterAcceptInvitation: async ({ invitation, member, user, organization }) => {
+            await applyInvitationLocations(database, auditLogger, {
+              invitationId: invitation.id,
+              organizationId: organization.id,
+              memberId: member.id,
+              actorUserId: user.id,
+            });
             await auditLogger.record({
               scope: "organization",
               organizationId: organization.id,
@@ -528,7 +470,7 @@ export function createAuth(
         // R6.4: 1h, matching better-auth's default but pinned against upstream drift.
         impersonationSessionDuration: 60 * 60,
       }),
-      invitationSignUpPlugin(auditLogger),
+      invitationSignUpPlugin(auditLogger, database),
       accountSecurity.plugin,
       ...extraPlugins,
     ],

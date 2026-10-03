@@ -1,6 +1,7 @@
 import { areasRouter } from "./areas";
 import { locationsRouter } from "./locations";
 import { menuRouter } from "./menu";
+import { overridesRouter } from "./overrides";
 import { setupRouter } from "./setup";
 import { staffRouter } from "./staff";
 import { stationsRouter } from "./stations";
@@ -14,6 +15,7 @@ import { tablesRouter } from "./tables";
 export const restaurantRouter = {
   locations: locationsRouter,
   staff: staffRouter,
+  overrides: overridesRouter,
   areas: areasRouter,
   tables: tablesRouter,
   stations: stationsRouter,
