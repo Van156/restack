@@ -49,7 +49,12 @@ export async function verifyPin(pin: string, stored: string): Promise<boolean> {
     return false;
   }
   const actual = await derive(pin, Buffer.from(saltHex, "hex"));
-  return timingSafeEqual(actual, expected);
+  try {
+    return timingSafeEqual(actual, expected);
+  } finally {
+    actual.fill(0);
+    expected.fill(0);
+  }
 }
 
 /** Salt (hex) and key of a stored `salt:hash`, or null. The key is server-only, equivalent to the hash. */

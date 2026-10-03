@@ -121,19 +121,24 @@ export async function openOfflineSigner(
     material.memberId,
     material.epoch,
   ]);
-  const offlineKey = await openSealed(pinKey, material.sealedKey, aad);
-  pinKey.fill(0);
-  if (!offlineKey) {
-    return null;
+  let offlineKey: Uint8Array<ArrayBuffer> | null = null;
+  let macKey: CryptoKey;
+  try {
+    offlineKey = await openSealed(pinKey, material.sealedKey, aad);
+    if (!offlineKey) {
+      return null;
+    }
+    macKey = await crypto.subtle.importKey(
+      "raw",
+      offlineKey,
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+  } finally {
+    pinKey.fill(0);
+    offlineKey?.fill(0);
   }
-  const macKey = await crypto.subtle.importKey(
-    "raw",
-    offlineKey,
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  offlineKey.fill(0);
 
   return {
     memberId: material.memberId,

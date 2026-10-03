@@ -228,7 +228,9 @@ async function resolveOfflineActor(
     kind: claim.kind,
     deviceRecordedAtMs: claim.deviceRecordedAt.getTime(),
   };
-  if (!verifyOfflineMac(offlineKey, signed, claim.mac)) {
+  const macValid = verifyOfflineMac(offlineKey, signed, claim.mac);
+  offlineKey.fill(0);
+  if (!macValid) {
     throw refuseOfflineActor(OFFLINE_ACTOR_REASON.invalid);
   }
   return loadActingMember(

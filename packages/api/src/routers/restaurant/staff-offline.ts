@@ -87,18 +87,23 @@ export const offlineCredentialsProcedure = orgProcedure
         ...scope,
         binding: context.member.id,
       });
-      return [
-        {
-          memberId: member.memberId,
-          name: member.name,
-          role: member.role,
-          salt: parsed.saltHex,
-          params: OFFLINE_PIN_KDF,
-          sealedKey: sealOfflineKey(parsed.key, offlineKey, sealAad(scope)),
-          epoch: stored.offlineEpoch,
-          expiresAt,
-        },
-      ];
+      try {
+        return [
+          {
+            memberId: member.memberId,
+            name: member.name,
+            role: member.role,
+            salt: parsed.saltHex,
+            params: OFFLINE_PIN_KDF,
+            sealedKey: sealOfflineKey(parsed.key, offlineKey, sealAad(scope)),
+            epoch: stored.offlineEpoch,
+            expiresAt,
+          },
+        ];
+      } finally {
+        parsed.key.fill(0);
+        offlineKey.fill(0);
+      }
     });
     return { members };
   });
