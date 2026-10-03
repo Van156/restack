@@ -173,7 +173,7 @@ export const tablesRouter = {
           .where(eq(schema.diningTable.id, table.id))
           .returning(),
       );
-      // The synced write this edit overwrote can no longer win: its replay is already applied.
+      // Invariant: the synced write this edit replaced never wins; its replay is already applied.
       await markSuperseded(context, table.metadataWriteKey);
       return updated!;
     }),

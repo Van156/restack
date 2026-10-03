@@ -137,7 +137,7 @@ export const orderSessionsRouter = {
           .where(eq(schema.tableSession.id, session.id))
           .returning(),
       );
-      // A synced move this one overwrote can no longer win: its replay is already applied.
+      // Invariant: the synced move this one replaced never wins; its replay is already applied.
       await markSuperseded(context, session.tableMoveKey);
       return moved!;
     }),

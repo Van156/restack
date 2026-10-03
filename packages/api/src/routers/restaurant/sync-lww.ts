@@ -3,10 +3,10 @@ import { and, eq } from "drizzle-orm";
 
 import type { OrderContext } from "./orders-shared";
 
-type Stored = { writtenAt: Date | null; writeKey: string | null };
+type LwwStamp = { writtenAt: Date | null; writeKey: string | null };
 
 /** True when a write at (`at`, `key`) beats the stored one: later device time, then the greater key. */
-export function beatsStored(incoming: { at: Date; key: string }, stored: Stored): boolean {
+export function beatsStored(incoming: { at: Date; key: string }, stored: LwwStamp): boolean {
   if (!stored.writtenAt) {
     return true;
   }
@@ -34,8 +34,8 @@ export async function wasSuperseded(
 }
 
 /**
- * Remembers the key of a write that lost (or was overtaken), so replaying it reports
- * `already_applied`. Callers hold the row lock of the entity, so this never races itself.
+ * Invariant: a write that lost or was overtaken is remembered by key, so replaying it reports
+ * `already_applied`. Callers hold the entity's row lock, so marking never races itself.
  */
 export async function markSuperseded(
   context: Pick<OrderContext, "db" | "org">,
