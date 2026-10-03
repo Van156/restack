@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import AdjustmentsPanel from "./adjustments-panel";
+import ClosedShiftSummary from "./closed-shift-summary";
+import CloseShiftForm from "./close-shift-form";
 import BuyerPicker from "./buyer-picker";
 import { openBill, paidBill } from "../lib/checkout-fixtures";
 import CheckoutRowsView from "./checkout-rows-view";
@@ -11,8 +13,10 @@ import DocumentChoiceForm from "./document-choice-form";
 import { DocumentResult, ExemptReceiptView } from "./document-result";
 import type { BuyerSummary, DocumentOptions } from "../lib/document-choice";
 import OfflineSaleSection from "./offline-sale-section";
+import OpenShiftForm from "./open-shift-form";
 import PaymentForm from "./payment-form";
 import PendingChargesView from "./pending-charges-view";
+import ShiftLedgerView from "./shift-ledger-view";
 import TipStep from "./tip-step";
 
 const noop = () => {};
@@ -416,5 +420,96 @@ describe("PendingChargesView", () => {
         <PendingChargesView rows={[]} checklist={checklist} online onRetry={noop} />,
       ),
     ).toContain("No hay cobros pendientes");
+  });
+});
+
+describe("OpenShiftForm", () => {
+  test("asks for the opening cash and shows why opening failed", () => {
+    const html = renderToStaticMarkup(
+      <OpenShiftForm
+        busy={false}
+        errorMessage="Este local ya tiene un turno de caja abierto."
+        onOpen={noop}
+      />,
+    );
+    expect(html).toContain("Efectivo inicial");
+    expect(html).toContain("Este local ya tiene un turno de caja abierto.");
+  });
+});
+
+describe("ShiftLedgerView", () => {
+  const ledger = {
+    shiftId: "sh1",
+    openingAmount: 100_000,
+    openedAt: "2026-10-03T13:00:00.000Z",
+    takings: {
+      cash: { amount: 50_000, count: 2 },
+      card: { amount: 80_000, count: 3 },
+      qr_transfer: { amount: 0, count: 0 },
+    },
+    tips: 16_000,
+    changeGiven: 2_000,
+    expected: { cash: 150_000, card: 80_000, qr_transfer: 0, total: 230_000 },
+  };
+
+  test("shows the takings by tender with the expected total", () => {
+    const html = renderToStaticMarkup(<ShiftLedgerView ledger={ledger} takings={[]} />);
+    expect(html).toContain("Efectivo");
+    expect(html).toContain("Tarjeta");
+    expect(html).toContain("QR / transferencia");
+    expect(html).toContain("Total esperado");
+    expect(html).toContain("Ningún cobro de este turno se registró sin conexión.");
+  });
+
+  test("lists the takings registered offline with their reference and original time", () => {
+    const html = renderToStaticMarkup(
+      <ShiftLedgerView
+        ledger={ledger}
+        takings={[
+          {
+            id: "t1",
+            tender: "card",
+            amount: 35_000,
+            reference: "0045",
+            saleTime: "2026-10-03T18:30:00.000Z",
+          },
+        ]}
+      />,
+    );
+    expect(html).toContain("Cobros registrados sin conexión");
+    expect(html).toContain("Ref. 0045");
+    expect(html).toContain("03/10/2026 13:30:00");
+  });
+});
+
+describe("CloseShiftForm", () => {
+  const expected = { cash: 150_000, card: 80_000, qr_transfer: 30_000 };
+
+  test("asks for the count of every tender and shows what was expected", () => {
+    const html = renderToStaticMarkup(
+      <CloseShiftForm expected={expected} busy={false} errorMessage={null} onClose={noop} />,
+    );
+    expect(html).toContain("Efectivo contado");
+    expect(html).toContain("Tarjeta contado");
+    expect(html).toContain("QR / transferencia contado");
+    expect(html).toContain("Cerrar turno");
+    expect(html).not.toContain("autorización de un Administrador");
+  });
+});
+
+describe("ClosedShiftSummary", () => {
+  test("shows each tender counted against expected and the total difference", () => {
+    const html = renderToStaticMarkup(
+      <ClosedShiftSummary
+        expected={{ cash: 150_000, card: 80_000, qr_transfer: 30_000 }}
+        counted={{ cash: 140_000, card: 80_000, qr_transfer: 30_000 }}
+      >
+        <p>Reparto aquí</p>
+      </ClosedShiftSummary>,
+    );
+    expect(html).toContain("Turno cerrado");
+    expect(html).toContain("Faltan");
+    expect(html).toContain("Cuadra");
+    expect(html).toContain("Reparto aquí");
   });
 });

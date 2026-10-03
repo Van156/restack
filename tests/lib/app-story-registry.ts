@@ -72,4 +72,8 @@ export const APP_PRESENTATIONAL_COMPONENTS: readonly string[] = [
   "features/cashier/components/contingency-ticket-view.tsx",
   "features/cashier/components/offline-sale-section.tsx",
   "features/cashier/components/pending-charges-view.tsx",
+  "features/cashier/components/open-shift-form.tsx",
+  "features/cashier/components/shift-ledger-view.tsx",
+  "features/cashier/components/close-shift-form.tsx",
+  "features/cashier/components/closed-shift-summary.tsx",
 ];
