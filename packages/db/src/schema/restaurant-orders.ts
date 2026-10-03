@@ -75,6 +75,12 @@ export const tableSession = pgTable(
     /** Increments when the QR is regenerated. */
     tokenVersion: integer("token_version").default(1).notNull(),
     shortCode: text("short_code").notNull(),
+    /**
+     * Last-write-wins marker for moves between Tables: device time of the move that last placed
+     * the session and the sync key of that write (the tie-break). Null until a move.
+     */
+    tableMovedAt: timestamp("table_moved_at", { withTimezone: true }),
+    tableMoveKey: text("table_move_key"),
     createdAt: createdAt(),
   },
   (table) => [
@@ -83,6 +89,51 @@ export const tableSession = pgTable(
       .where(sql`${table.status} <> 'settled'`),
     index("tableSession_organizationId_idx").on(table.organizationId),
     index("tableSession_locationId_idx").on(table.locationId),
+  ],
+);
+
+/**
+ * Client-generated keys that name a Table session opened offline, so later sync records can
+ * reference it before the device knows the server id. Several keys can name one session (devices
+ * that opened the same Table offline are merged). See docs/architecture/restaurant.md#sync.
+ */
+export const tableSessionKey = pgTable(
+  "table_session_key",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    tableSessionId: text("table_session_id")
+      .notNull()
+      .references(() => tableSession.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    unique("tableSessionKey_org_idempotencyKey_unique").on(
+      table.organizationId,
+      table.idempotencyKey,
+    ),
+    index("tableSessionKey_tableSessionId_idx").on(table.tableSessionId),
+  ],
+);
+
+/**
+ * Sync keys of last-write-wins writes (Table metadata, session moves) that lost to a newer write,
+ * so replaying one reports `already_applied` instead of applying again.
+ */
+export const syncSupersededWrite = pgTable(
+  "sync_superseded_write",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    unique("syncSupersededWrite_org_idempotencyKey_unique").on(
+      table.organizationId,
+      table.idempotencyKey,
+    ),
   ],
 );
 

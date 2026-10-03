@@ -8,6 +8,9 @@ import { loadAreaInScope } from "./areas";
 import { idempotencyKey } from "./orders-shared";
 import type { OrderContext } from "./orders-shared";
 import { definedFields, orConflict } from "./setup-helpers";
+import { beatsStored, markSuperseded, wasSuperseded } from "./sync-lww";
+import { SYNC_NOTE, SYNC_STATUS } from "./sync-results";
+import type { SyncOutcome } from "./sync-results";
 
 export const tableMetadataPayload = z
   .object({
@@ -20,26 +23,11 @@ export const tableMetadataPayload = z
     message: "Nothing to update.",
   });
 
-export type TableMetadataOutcome = { status: "applied" | "already_applied"; note?: "superseded" };
-
-/** True when a write at (`at`, `key`) beats the stored one: later device time, then the greater key. */
-function beatsStored(
-  incoming: { at: Date; key: string },
-  stored: { writtenAt: Date | null; writeKey: string | null },
-): boolean {
-  if (!stored.writtenAt) {
-    return true;
-  }
-  if (incoming.at.getTime() !== stored.writtenAt.getTime()) {
-    return incoming.at.getTime() > stored.writtenAt.getTime();
-  }
-  return incoming.key > (stored.writeKey ?? "");
-}
+export type TableMetadataOutcome = Pick<SyncOutcome, "status" | "note">;
 
 /**
- * Applies a synced Table metadata write with last-write-wins by device time; a tie goes to the
- * greater sync key, so the result does not depend on arrival order and a replay changes nothing.
- * The caller clamps `deviceAt` to the server clock. See docs/architecture/restaurant.md#sync.
+ * Applies a synced Table metadata write, last-write-wins by device time (ties to the greater key).
+ * See docs/architecture/restaurant.md#sync.
  */
 export async function applyTableMetadata(
   context: OrderContext,
@@ -61,13 +49,16 @@ export async function applyTableMetadata(
   }
   await assertLocationAccess(context, table.locationId);
   if (table.metadataWriteKey === record.idempotencyKey) {
-    return { status: "already_applied", tableId: table.id };
+    return { status: SYNC_STATUS.alreadyApplied, tableId: table.id };
+  }
+  if (await wasSuperseded(context, record.idempotencyKey)) {
+    return { status: SYNC_STATUS.alreadyApplied, note: SYNC_NOTE.superseded, tableId: table.id };
   }
   const incoming = { at: record.deviceAt, key: record.idempotencyKey };
-  if (
-    !beatsStored(incoming, { writtenAt: table.metadataWrittenAt, writeKey: table.metadataWriteKey })
-  ) {
-    return { status: "applied", note: "superseded", tableId: table.id };
+  const stored = { writtenAt: table.metadataWrittenAt, writeKey: table.metadataWriteKey };
+  if (!beatsStored(incoming, stored)) {
+    await markSuperseded(context, record.idempotencyKey);
+    return { status: SYNC_STATUS.applied, note: SYNC_NOTE.superseded, tableId: table.id };
   }
   if (payload.areaId) {
     const area = await loadAreaInScope(context, payload.areaId);
@@ -87,5 +78,6 @@ export async function applyTableMetadata(
       })
       .where(eq(schema.diningTable.id, table.id)),
   );
-  return { status: "applied", tableId: table.id };
+  await markSuperseded(context, table.metadataWriteKey);
+  return { status: SYNC_STATUS.applied, tableId: table.id };
 }

@@ -15,10 +15,12 @@ import {
 } from "./orders-shared";
 import type { OrderContext } from "./orders-shared";
 import { orConflict } from "./setup-helpers";
+import { markSuperseded } from "./sync-lww";
 
-const TABLE_OCCUPIED = "This Table already has an open session.";
+export const TABLE_OCCUPIED = "This Table already has an open session.";
 
-async function loadTableInOrg(context: OrderContext, tableId: string) {
+/** A Table of the caller's organization (Location access is checked by the caller). */
+export async function loadTableInOrg(context: OrderContext, tableId: string) {
   const [table] = await context.db
     .select()
     .from(schema.diningTable)
@@ -125,10 +127,12 @@ export const orderSessionsRouter = {
       const [moved] = await orConflict(TABLE_OCCUPIED, () =>
         context.db
           .update(schema.tableSession)
-          .set({ tableId: table.id })
+          .set({ tableId: table.id, tableMovedAt: context.clock.now(), tableMoveKey: null })
           .where(eq(schema.tableSession.id, session.id))
           .returning(),
       );
+      // A synced move this one overwrote can no longer win: its replay is already applied.
+      await markSuperseded(context, session.tableMoveKey);
       return moved!;
     }),
 

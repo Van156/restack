@@ -83,6 +83,7 @@ export async function issueDocumentCore(
   if (!location.dianEnabled) {
     return {
       kind: "exempt_receipt" as const,
+      replayed: false,
       note: EXEMPT_RECEIPT_NOTE,
       lines: view.lines.map((line) => ({
         name: line.itemName,
@@ -145,6 +146,8 @@ export async function issueDocumentCore(
       : outcome.document;
   return {
     kind: "document" as const,
+    /** True when the Bill already held this document (a repeated or concurrent request). */
+    replayed: outcome.status !== "created",
     document,
     notes: documentNotes((document.payload as DocumentPayload).buyer),
   };

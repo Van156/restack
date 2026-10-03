@@ -543,6 +543,41 @@ describe.skipIf(!reachable)("restaurant sync: batch push", () => {
       expect(replay!.status).toBe("already_applied");
     });
 
+    test("replaying a superseded write reports already_applied with the superseded note, not applied", async () => {
+      await push([metadata("meta-new", T2, { name: "Terraza 1" })], "owner");
+      const [first] = await push([metadata("meta-old", T1, { name: "Barra" })], "owner");
+      const [replay] = await push([metadata("meta-old", T1, { name: "Barra" })], "owner");
+
+      expect(first).toMatchObject({ status: "applied", note: "superseded" });
+      expect(replay).toMatchObject({ status: "already_applied", note: "superseded" });
+      expect((await readTable()).name).toBe("Terraza 1");
+    });
+
+    test("replaying a winner that a newer write overtook reports already_applied and changes nothing", async () => {
+      await push([metadata("meta-1", T1, { name: "Barra" })], "owner");
+      await push([metadata("meta-2", T2, { name: "Terraza 1" })], "owner");
+
+      const [replay] = await push([metadata("meta-1", T1, { name: "Barra" })], "owner");
+
+      expect(replay!.status).toBe("already_applied");
+      expect((await readTable()).name).toBe("Terraza 1");
+    });
+
+    test("replaying a write that an online edit overwrote reports already_applied", async () => {
+      await push([metadata("meta-1", T1, { name: "Barra" })], "owner");
+      harness.clock.setNow(new Date(SYNC_AT.getTime() + 60_000));
+      await call(
+        restaurantRouter.tables.update,
+        { tableId: tableId(), name: "En línea" },
+        { context: await scenario.as("owner") },
+      );
+
+      const [replay] = await push([metadata("meta-1", T1, { name: "Barra" })], "owner");
+
+      expect(replay!.status).toBe("already_applied");
+      expect((await readTable()).name).toBe("En línea");
+    });
+
     test("a device clock ahead of the server is clamped, so a later real write still wins", async () => {
       const future = new Date("2027-01-01T00:00:00.000Z");
       await push([metadata("meta-future", future, { name: "Futuro" })], "owner");
@@ -638,6 +673,58 @@ describe.skipIf(!reachable)("restaurant sync: batch push", () => {
       expect(syncDay.documents.total).toBe(0);
     });
 
+    test("a Bill paid partly online and partly offline settles at the completing payment, and the document agrees", async () => {
+      await push([line("line-1", { quantity: 2 })]);
+      await call(
+        restaurantRouter.billing.recordPayment,
+        { tableSessionId: sessionId, tender: "cash", amount: 6_000, idempotencyKey: "online-1" },
+        { context: await scenario.as("cashierA") },
+      );
+      const completedAt = new Date("2026-10-03T14:20:00.000Z");
+
+      await push([
+        payment(
+          "pay-offline",
+          { amount: 6_000, registeredOffline: true, settle: true },
+          completedAt,
+        ),
+        documentRequest(),
+      ]);
+
+      const [bill] = await harness.db.select().from(schema.bill);
+      const [document] = await harness.db.select().from(schema.dianDocument);
+      // The online payment was recorded at the server clock (15:00), later than the offline one.
+      expect(bill!.settledAt).toEqual(SYNC_AT);
+      expect(document!.saleTime).toEqual(SYNC_AT);
+    });
+
+    test("an online payment stamped by a device clock ahead settles and documents at the server clock, never in the future", async () => {
+      await push([line("line-1")]);
+      await call(
+        restaurantRouter.billing.recordPayment,
+        {
+          tableSessionId: sessionId,
+          tender: "cash",
+          amount: 6_000,
+          idempotencyKey: "online-1",
+          clientRecordedAt: new Date("2026-10-09T10:00:00.000Z"),
+        },
+        { context: await scenario.as("cashierA") },
+      );
+      await call(
+        restaurantRouter.billing.settle,
+        { tableSessionId: sessionId },
+        { context: await scenario.as("cashierA") },
+      );
+
+      await push([documentRequest()]);
+
+      const [bill] = await harness.db.select().from(schema.bill);
+      const [document] = await harness.db.select().from(schema.dianDocument);
+      expect(bill!.settledAt).toEqual(SYNC_AT);
+      expect(document!.saleTime).toEqual(SYNC_AT);
+    });
+
     test("the 48 hour transmission deadline counts from when the request reached the server", async () => {
       await push([line("line-1"), payment("pay-1", { settle: true }), documentRequest()]);
 
@@ -673,6 +760,79 @@ describe.skipIf(!reachable)("restaurant sync: batch push", () => {
       expect(result!.status).toBe("applied");
       const [document] = await harness.db.select().from(schema.dianDocument);
       expect(document!.status).toBe("pending");
+    });
+  });
+
+  describe("replays racing each other", () => {
+    const statuses = (batches: { status: string }[][]) =>
+      batches.map((results) => results[0]!.status).sort();
+    const ONE_EACH = ["already_applied", "applied"];
+    const race = (record: SyncRecord) => Promise.all([push([record]), push([record])]);
+
+    test("one order line applies once", async () => {
+      expect(statuses(await race(line("line-1")))).toEqual(ONE_EACH);
+      expect(await lines()).toHaveLength(1);
+    });
+
+    test("one void applies once", async () => {
+      await push([line("line-1")]);
+
+      const batches = await race({
+        idempotencyKey: "void-1",
+        kind: "void",
+        deviceRecordedAt: SOLD_AT,
+        payload: { lineKey: "line-1" },
+      });
+
+      expect(statuses(batches)).toEqual(ONE_EACH);
+      expect(await harness.db.select().from(schema.orderLineVoid)).toHaveLength(1);
+    });
+
+    test("one void of a sent line applies once and spends its Override once", async () => {
+      await push([line("line-1")]);
+      await call(
+        restaurantRouter.orders.sendToKitchen,
+        { tableSessionId: sessionId },
+        { context: await scenario.as("waiterA") },
+      );
+      const [stored] = await lines();
+      const overrideId = await scenario.mintOverride("void_line", stored!.id);
+
+      const batches = await race({
+        idempotencyKey: "void-1",
+        kind: "void",
+        deviceRecordedAt: SOLD_AT,
+        payload: { lineId: stored!.id, overrideId },
+      });
+
+      expect(statuses(batches)).toEqual(ONE_EACH);
+      expect(await harness.db.select().from(schema.orderLineVoid)).toHaveLength(1);
+    });
+
+    test("one payment with settle applies once", async () => {
+      await push([line("line-1")]);
+
+      const batches = await race(payment("pay-1", { settle: true }));
+
+      expect(statuses(batches)).toEqual(ONE_EACH);
+      expect(await harness.db.select().from(schema.payment)).toHaveLength(1);
+      const [bill] = await harness.db.select().from(schema.bill);
+      expect(bill!.status).toBe("settled");
+    });
+
+    test("one document request applies once and calls the provider once", async () => {
+      await push([line("line-1"), payment("pay-1", { settle: true })]);
+
+      const batches = await race({
+        idempotencyKey: "doc-1",
+        kind: "document_request",
+        deviceRecordedAt: SOLD_AT,
+        payload: { tableSessionId: sessionId },
+      });
+
+      expect(statuses(batches)).toEqual(ONE_EACH);
+      expect(await harness.db.select().from(schema.dianDocument)).toHaveLength(1);
+      expect(harness.invoicing.issued).toHaveLength(1);
     });
   });
 

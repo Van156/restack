@@ -1,3 +1,4 @@
+import type { Database } from "@base-template/db";
 import * as schema from "@base-template/db/schema";
 import { DISCOUNT_KINDS } from "@base-template/db/schema/restaurant-orders";
 import { ORPCError } from "@orpc/server";
@@ -27,12 +28,25 @@ export const voidLineInput = z.object({
 });
 export type VoidLineInput = z.infer<typeof voidLineInput>;
 
-/** Voids an Order line; a sent line needs an Override spent in the same transaction. Idempotent per key. */
-export async function voidLineCore(context: OrderContext, input: VoidLineInput) {
+/** Thrown inside the void transaction when a concurrent call with the same key won; rolls it back. */
+class ConcurrentReplay extends Error {
+  constructor(readonly voided: typeof schema.orderLineVoid.$inferSelect) {
+    super("The void was recorded by a concurrent call with the same key.");
+  }
+}
+
+/**
+ * Voids an Order line; a sent line needs an Override spent in the same transaction. Idempotent
+ * per key: `replayed` is true when the key had already recorded the void, also under concurrency.
+ */
+export async function voidLineCore(
+  context: OrderContext,
+  input: VoidLineInput,
+): Promise<{ voided: typeof schema.orderLineVoid.$inferSelect; replayed: boolean }> {
   const { line, session } = await loadLineInScope(context, input.lineId);
   const replay = await findVoidByKey(context, input.idempotencyKey, line.id);
   if (replay) {
-    return replay;
+    return { voided: replay, replayed: true };
   }
   assertSessionUnsettled(session);
   const [alreadyVoided] = await context.db
@@ -52,40 +66,68 @@ export async function voidLineCore(context: OrderContext, input: VoidLineInput) 
   }
   const memberId = await resolveActingMemberId(context, session.locationId, input.actingToken);
 
-  const { created, approverMemberId } = await context.db.transaction(async (tx) => {
-    const approver =
-      sent && input.overrideId
-        ? await consumeOverride(
-            { db: tx, clock: context.clock },
-            {
-              organizationId: context.org.id,
-              actorUserId: context.session.user.id,
-              overrideId: input.overrideId,
-              locationId: session.locationId,
-              action: "void_line",
-              target: line.id,
-            },
-          )
-        : null;
-    const [inserted] = await tx
-      .insert(schema.orderLineVoid)
-      .values({
-        organizationId: context.org.id,
-        orderLineId: line.id,
-        reason: input.reason ?? null,
-        overrideId: sent ? (input.overrideId ?? null) : null,
-        recordedByMemberId: memberId,
-        recordedAt: context.clock.now(),
-        idempotencyKey: input.idempotencyKey,
-      })
-      .onConflictDoNothing()
-      .returning();
-    if (!inserted) {
-      // Already voided (another key, or a concurrent call): roll back the spent Override.
-      throw new ORPCError("CONFLICT", { message: "This line is already voided." });
+  let outcome: {
+    created: typeof schema.orderLineVoid.$inferSelect;
+    approverMemberId: string | null;
+  };
+  try {
+    outcome = await context.db.transaction(async (tx) => {
+      const approver =
+        sent && input.overrideId
+          ? await consumeOverride(
+              { db: tx, clock: context.clock },
+              {
+                organizationId: context.org.id,
+                actorUserId: context.session.user.id,
+                overrideId: input.overrideId,
+                locationId: session.locationId,
+                action: "void_line",
+                target: line.id,
+              },
+            )
+          : null;
+      const [inserted] = await tx
+        .insert(schema.orderLineVoid)
+        .values({
+          organizationId: context.org.id,
+          orderLineId: line.id,
+          reason: input.reason ?? null,
+          overrideId: sent ? (input.overrideId ?? null) : null,
+          recordedByMemberId: memberId,
+          recordedAt: context.clock.now(),
+          idempotencyKey: input.idempotencyKey,
+        })
+        .onConflictDoNothing()
+        .returning();
+      if (!inserted) {
+        // The same key won a race: report its void and roll back the spent Override.
+        const winner = await findVoidByKey(
+          { ...context, db: tx as unknown as Database },
+          input.idempotencyKey,
+          line.id,
+        );
+        if (winner) {
+          throw new ConcurrentReplay(winner);
+        }
+        // Voided under another key: roll back the spent Override.
+        throw new ORPCError("CONFLICT", { message: "This line is already voided." });
+      }
+      return { created: inserted, approverMemberId: approver?.approverMemberId ?? null };
+    });
+  } catch (error) {
+    if (error instanceof ConcurrentReplay) {
+      return { voided: error.voided, replayed: true };
     }
-    return { created: inserted, approverMemberId: approver?.approverMemberId ?? null };
-  });
+    if (error instanceof ORPCError) {
+      // A concurrent call with this key may have recorded the void and spent the Override first.
+      const winner = await findVoidByKey(context, input.idempotencyKey, line.id);
+      if (winner) {
+        return { voided: winner, replayed: true };
+      }
+    }
+    throw error;
+  }
+  const { created, approverMemberId } = outcome;
 
   if (sent) {
     await context.auditLogger.record({
@@ -106,7 +148,7 @@ export async function voidLineCore(context: OrderContext, input: VoidLineInput) 
       },
     });
   }
-  return created;
+  return { voided: created, replayed: false };
 }
 
 export const orderVoidsRouter = {
@@ -117,7 +159,7 @@ export const orderVoidsRouter = {
   voidLine: orgProcedure
     .use(requirePermission({ order: ["take"] }))
     .input(voidLineInput)
-    .handler(({ context, input }) => voidLineCore(context, input)),
+    .handler(async ({ context, input }) => (await voidLineCore(context, input)).voided),
 
   /**
    * Applies a discount (amount or percent) to a Table session. Always needs an Override

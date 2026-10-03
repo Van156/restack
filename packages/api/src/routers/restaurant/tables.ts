@@ -8,6 +8,7 @@ import { assertLocationAccess } from "../../lib/location-scope";
 import { hasOpenSessionAtTable } from "../../lib/table-session";
 import { loadAreaInScope } from "./areas";
 import { definedFields, orConflict, orRestricted } from "./setup-helpers";
+import { markSuperseded } from "./sync-lww";
 
 const name = z.string().trim().min(1).max(80);
 const seats = z.number().int().min(1).max(100);
@@ -172,6 +173,8 @@ export const tablesRouter = {
           .where(eq(schema.diningTable.id, table.id))
           .returning(),
       );
+      // The synced write this edit overwrote can no longer win: its replay is already applied.
+      await markSuperseded(context, table.metadataWriteKey);
       return updated!;
     }),
 

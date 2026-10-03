@@ -16,7 +16,8 @@ import {
 } from "./orders-shared";
 import type { OrderContext, OrderLineRow } from "./orders-shared";
 
-async function findLineByKey(
+/** The Order line recorded under this idempotency key, if any. */
+export async function findLineByKey(
   context: OrderContext,
   key: string,
 ): Promise<OrderLineRow | undefined> {
@@ -96,16 +97,14 @@ export type RecordedPrices = {
 };
 
 /**
- * Appends an Order line. Without `recorded` the Menu price and modifier deltas are copied and a
- * sold-out or inactive item is refused. With `recorded` (a synced offline line) the device's
- * prices are stored as given and the availability guards are skipped: the line was taken before
- * the server knew. A replay by idempotency key returns the stored line either way.
+ * Appends an Order line; `recorded` (a synced offline line) keeps the device prices and skips the
+ * availability guards. `replayed` is true for a repeated key. See docs/architecture/restaurant.md#sync.
  */
 export async function addLineCore(
   context: OrderContext,
   input: AddLineInput,
   recorded?: RecordedPrices,
-): Promise<OrderLineRow> {
+): Promise<{ line: OrderLineRow; replayed: boolean }> {
   const session = await loadSessionInScope(context, input.tableSessionId);
   const replay = await findLineByKey(context, input.idempotencyKey);
   if (replay) {
@@ -114,7 +113,7 @@ export async function addLineCore(
         message: "This idempotency key was already used for another Table session.",
       });
     }
-    return replay;
+    return { line: replay, replayed: true };
   }
   assertSessionUnsettled(session);
 
@@ -180,8 +179,10 @@ export async function addLineCore(
       target: [schema.orderLine.organizationId, schema.orderLine.idempotencyKey],
     })
     .returning();
-  // A concurrent request with the same key won the race: return its line.
-  return created ?? (await findLineByKey(context, input.idempotencyKey))!;
+  // A concurrent request with the same key won the race: return its line as a replay.
+  return created
+    ? { line: created, replayed: false }
+    : { line: (await findLineByKey(context, input.idempotencyKey))!, replayed: true };
 }
 
 export const removeLineInput = z.object({
@@ -280,7 +281,7 @@ export const orderLinesRouter = {
   addLine: orgProcedure
     .use(requirePermission({ order: ["take"] }))
     .input(addLineInput)
-    .handler(({ context, input }) => addLineCore(context, input)),
+    .handler(async ({ context, input }) => (await addLineCore(context, input)).line),
 
   /** Removes an unsent line (a void record, no Override); sent lines need `voidLine`. Idempotent. */
   removeLine: orgProcedure

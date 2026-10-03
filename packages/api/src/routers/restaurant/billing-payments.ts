@@ -85,7 +85,7 @@ export async function recordPaymentCore(context: OrderContext, input: PaymentInp
       if (replay.billId !== bill.id) {
         throw new ORPCError("CONFLICT", { message: "This idempotency key was already used." });
       }
-      return { payment: replay };
+      return { payment: replay, replayed: true };
     }
 
     const view = await loadBillView(tx, session, location.suggestedTipPercent);
@@ -114,12 +114,14 @@ export async function recordPaymentCore(context: OrderContext, input: PaymentInp
         idempotencyKey: input.idempotencyKey,
       })
       .returning();
-    return { payment: payment! };
+    return { payment: payment!, replayed: false };
   });
 
   const payment = outcome.payment;
   return {
     payment,
+    /** True when the key had already recorded this payment (a replay). */
+    replayed: outcome.replayed,
     change: payment.tendered === null ? 0 : payment.tendered - payment.amount,
     bill: await loadBillView(context.db, session, location.suggestedTipPercent),
   };
