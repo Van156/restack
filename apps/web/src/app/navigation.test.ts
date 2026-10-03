@@ -25,6 +25,10 @@ describe("getSectionItems", () => {
     ]);
   });
 
+  test("derives the restaurant tabs from the sidebar config, in order", () => {
+    expect(getSectionItems("restaurant", member).map((item) => item.label)).toEqual(["Locales"]);
+  });
+
   test("derives the account tabs from the sidebar config, in order", () => {
     expect(getSectionItems("account", member)).toEqual([
       { to: "/account/profile", label: "Profile" },
@@ -53,11 +57,11 @@ describe("getSectionItems", () => {
 });
 
 describe("navGroups visibility", () => {
-  test("a member sees dashboard, settings and account but not the platform admin group", () => {
+  test("a member sees dashboard, restaurant, settings and account but not the platform admin group", () => {
     const labels = filterNavGroups(navGroups, member).flatMap((group) =>
       group.items.map((item) => item.label),
     );
-    expect(labels).toEqual(["Dashboard", "Settings", "Account settings"]);
+    expect(labels).toEqual(["Dashboard", "Restaurante", "Settings", "Account settings"]);
   });
 
   test("a user without an organization sees only the personal account group", () => {
@@ -76,7 +80,13 @@ describe("navGroups visibility", () => {
 
   test("a superadmin additionally sees the admin parent with its children", () => {
     const groups = filterNavGroups(navGroups, superadmin);
-    expect(groups.map((group) => group.id)).toEqual([undefined, "settings", "account", "admin"]);
+    expect(groups.map((group) => group.id)).toEqual([
+      undefined,
+      "restaurant",
+      "settings",
+      "account",
+      "admin",
+    ]);
     const admin = groups.find((group) => group.id === "admin");
     expect(admin?.items[0]?.children?.map((child) => child.to)).toEqual([
       "/admin/users",

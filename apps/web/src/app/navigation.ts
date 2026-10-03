@@ -1,4 +1,4 @@
-import { LayoutDashboard, Settings, ShieldCheck, UserRound } from "lucide-react";
+import { LayoutDashboard, Settings, ShieldCheck, Store, UserRound } from "lucide-react";
 
 import type { SectionNavItem } from "@/shared/components/layout/section-nav";
 import { filterNavGroups, flattenNavItems, type NavGroup } from "@/shared/lib/navigation";
@@ -45,6 +45,19 @@ export const navGroups: NavGroup<NavContext>[] = [
     label: "Dashboard",
     visible: hasOrganization,
     items: [{ label: "Dashboard", to: "/dashboard", icon: LayoutDashboard }],
+  },
+  {
+    id: "restaurant",
+    label: "Restaurante",
+    visible: hasOrganization,
+    items: [
+      {
+        label: "Restaurante",
+        to: "/restaurant/locations",
+        icon: Store,
+        children: [{ label: "Locales", to: "/restaurant/locations" }],
+      },
+    ],
   },
   {
     id: "settings",
@@ -107,7 +120,7 @@ export const navGroups: NavGroup<NavContext>[] = [
  * navigations always list the same pages.
  */
 export function getSectionItems(
-  sectionId: "settings" | "account" | "admin",
+  sectionId: "restaurant" | "settings" | "account" | "admin",
   context: NavContext,
 ): SectionNavItem[] {
   return deriveSectionItems(navGroups, sectionId, context);
