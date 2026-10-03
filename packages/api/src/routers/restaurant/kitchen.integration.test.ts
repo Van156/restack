@@ -372,6 +372,9 @@ describe.skipIf(!reachable)("restaurant kitchen display", () => {
         maxPrepMs: 20 * MINUTE_MS,
         avgPickupMs: (7 / 3) * MINUTE_MS,
         maxPickupMs: 4 * MINUTE_MS,
+        // the bar Ticket waited for the other two runs before it was started
+        avgSentToReadyMs: 23 * MINUTE_MS,
+        maxSentToReadyMs: 39 * MINUTE_MS,
       });
       const kitchen = result.stations.find((row) => row.stationId === service.stations.kitchen);
       expect(kitchen).toMatchObject({
@@ -381,9 +384,15 @@ describe.skipIf(!reachable)("restaurant kitchen display", () => {
         maxPrepMs: 20 * MINUTE_MS,
         avgPickupMs: 3 * MINUTE_MS,
         maxPickupMs: 4 * MINUTE_MS,
+        avgSentToReadyMs: 15 * MINUTE_MS,
+        maxSentToReadyMs: 20 * MINUTE_MS,
       });
       const bar = result.stations.find((row) => row.stationId === service.stations.bar);
-      expect(bar).toMatchObject({ ticketCount: 2, avgPrepMs: 3 * MINUTE_MS });
+      expect(bar).toMatchObject({
+        ticketCount: 2,
+        avgPrepMs: 3 * MINUTE_MS,
+        avgSentToReadyMs: 39 * MINUTE_MS,
+      });
     });
 
     test("a Station without finished Tickets reports no averages; days are separate", async () => {
@@ -398,6 +407,8 @@ describe.skipIf(!reachable)("restaurant kitchen display", () => {
         maxPrepMs: null,
         avgPickupMs: null,
         maxPickupMs: null,
+        avgSentToReadyMs: null,
+        maxSentToReadyMs: null,
       });
       const tomorrow = await metrics("admin", { date: "2026-10-03" });
       expect(tomorrow.total.ticketCount).toBe(0);

@@ -10,6 +10,7 @@ import { assertLocationAccess } from "../../lib/location-scope";
 import { loadStationAt } from "./kitchen-access";
 
 type TimedTicket = {
+  sentAt: Date;
   startedAt: Date | null;
   readyAt: Date | null;
   deliveredAt: Date | null;
@@ -23,6 +24,8 @@ type TimingSummary = {
   maxPrepMs: number | null;
   avgPickupMs: number | null;
   maxPickupMs: number | null;
+  avgSentToReadyMs: number | null;
+  maxSentToReadyMs: number | null;
 };
 
 function stats(durations: number[]): {
@@ -39,7 +42,7 @@ function stats(durations: number[]): {
   };
 }
 
-/** Preparation time is started to ready; pickup wait is ready to delivered. */
+/** Preparation time is started to ready; pickup wait is ready to delivered; sent to ready is the whole kitchen wait. */
 function summarize(tickets: TimedTicket[]): TimingSummary {
   const prep = stats(
     tickets.flatMap((t) =>
@@ -51,6 +54,9 @@ function summarize(tickets: TimedTicket[]): TimingSummary {
       t.readyAt && t.deliveredAt ? [t.deliveredAt.getTime() - t.readyAt.getTime()] : [],
     ),
   );
+  const sentToReady = stats(
+    tickets.flatMap((t) => (t.readyAt ? [t.readyAt.getTime() - t.sentAt.getTime()] : [])),
+  );
   return {
     ticketCount: tickets.length,
     completedCount: tickets.filter((t) => t.deliveredAt).length,
@@ -58,11 +64,13 @@ function summarize(tickets: TimedTicket[]): TimingSummary {
     maxPrepMs: prep.max,
     avgPickupMs: pickup.avg,
     maxPickupMs: pickup.max,
+    avgSentToReadyMs: sentToReady.avg,
+    maxSentToReadyMs: sentToReady.max,
   };
 }
 
 export const kitchenMetricsRouter = {
-  /** Preparation time and pickup wait per Station for the business day Tickets were sent. */
+  /** Preparation time, pickup wait and sent-to-ready time per Station for the business day Tickets were sent. */
   metrics: orgProcedure
     .use(requirePermission({ report: ["read"] }))
     .input(
