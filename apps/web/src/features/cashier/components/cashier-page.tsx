@@ -3,7 +3,7 @@ import { Tabs, TabsList, TabsTrigger } from "@base-template/ui/components/tabs";
 
 import { authClient } from "@/app/auth-client";
 import { client } from "@/app/orpc";
-import { CanGate } from "@/features/access-control";
+import { CanGate, useActiveMemberRole } from "@/features/access-control";
 import { ActingBar, ActingMemberProvider } from "@/features/acting-member";
 import { LocationScope, type LocationView } from "@/features/locations";
 import {
@@ -13,10 +13,12 @@ import {
 } from "@/features/offline-queue";
 import Loader from "@/shared/components/feedback/loader";
 import LoadError from "@/shared/components/feedback/load-error";
+import NoPermission from "@/shared/components/feedback/no-permission";
 import PageHeader from "@/shared/components/layout/page-header";
 
 import { useCashierFeed } from "../hooks/use-cashier-feed";
 import { useCheckoutTables } from "../hooks/use-checkout-tables";
+import { mayChargeAt } from "../lib/charge-access";
 import { buildCheckoutRows } from "../lib/checkout-rows";
 import { chargeRows } from "../lib/pending-charges";
 import type { CashierSearch, CashierView } from "../lib/cashier-search";
@@ -51,11 +53,13 @@ export default function CashierPage({ search, onSearchChange }: PageProps) {
       <CashierProviders>
         <LocationScope>
           {(location) => (
-            <div className="space-y-4">
-              <Connection />
-              <ActingBar locationId={location.id} />
-              <CashierViews location={location} search={search} onSearchChange={onSearchChange} />
-            </div>
+            <ChargeGuard location={location}>
+              <div className="space-y-4">
+                <Connection />
+                <ActingBar locationId={location.id} />
+                <CashierViews location={location} search={search} onSearchChange={onSearchChange} />
+              </div>
+            </ChargeGuard>
           )}
         </LocationScope>
       </CashierProviders>
@@ -73,6 +77,25 @@ function CashierProviders({ children }: { children: React.ReactNode }) {
       <ActingMemberProvider>{children}</ActingMemberProvider>
     </OfflineQueueProvider>
   );
+}
+
+/** UX only: a plain Waiter at a Location that does not let waiters charge sees why instead of the register. */
+function ChargeGuard({
+  location,
+  children,
+}: {
+  location: LocationView;
+  children: React.ReactNode;
+}) {
+  const { data: organization } = authClient.useActiveOrganization();
+  const role = useActiveMemberRole(organization?.id);
+  if (role.isPending) {
+    return <Loader />;
+  }
+  if (!mayChargeAt(role.data, location)) {
+    return <NoPermission message="Este local no permite que los meseros cobren." />;
+  }
+  return children;
 }
 
 /** The offline banner: silent while online. */
