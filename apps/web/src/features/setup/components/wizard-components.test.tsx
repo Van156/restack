@@ -46,6 +46,7 @@ describe("ReviewReport", () => {
     unroutedMenuItems: [{ id: "i1", name: "Bandeja" }],
     emptyAreas: [],
     idleStations: [],
+    missingNit: false,
     warningCount: 1,
     reminders: ["advertencia_propina"] as const,
   };
@@ -56,6 +57,17 @@ describe("ReviewReport", () => {
     expect(html).toContain("Bandeja");
     expect(html).toContain("Ir a Menú");
     expect(html).toContain("ADVERTENCIA PROPINA");
+  });
+
+  test("warns about a Location without NIT instead of saying everything is in order", () => {
+    const html = renderToStaticMarkup(
+      <ReviewReport
+        review={{ ...review, unroutedMenuItems: [], missingNit: true, warningCount: 1 }}
+        onGoToStep={() => {}}
+      />,
+    );
+    expect(html).toContain("Falta el NIT del local");
+    expect(html).not.toContain("Todo en orden");
   });
 
   test("says everything is in order when there are no warnings, keeping the reminder", () => {

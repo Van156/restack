@@ -88,6 +88,11 @@ export const dianSetupRouter = {
     .input(connectInput)
     .handler(async ({ context, input }) => {
       const location = await assertLocationAccess(context, input.locationId);
+      if (!location.nit) {
+        throw new ORPCError("PRECONDITION_FAILED", {
+          message: "Set the Location NIT before connecting DIAN.",
+        });
+      }
       return context.db.transaction(async (tx) => {
         const values = {
           provider: input.provider,

@@ -6,6 +6,7 @@ export type ReviewData = {
   unroutedMenuItems: { id: string; name: string }[];
   emptyAreas: { id: string; name: string }[];
   idleStations: { id: string; name: string }[];
+  missingNit: boolean;
   warningCount: number;
   reminders: readonly ReviewReminder[];
 };
@@ -46,6 +47,16 @@ export function reviewSections(review: ReviewData): ReviewSection[] {
     const names = review[section.key].map((entry) => entry.name);
     return names.length > 0 ? [{ ...section, names }] : [];
   });
+}
+
+/** The Location NIT is set on the Locales page, so this warning has no wizard step. */
+export function nitWarning(missingNit: boolean): { title: string; hint: string } | null {
+  return missingNit
+    ? {
+        title: "Falta el NIT del local",
+        hint: "Agrégalo en Locales. Sin NIT no se puede conectar la facturación electrónica y el tiquete de contingencia no lo muestra; cobrar sin conexión sigue funcionando.",
+      }
+    : null;
 }
 
 const REMINDER_TEXT: Record<ReviewReminder, string> = {

@@ -3,6 +3,7 @@ import * as schema from "@base-template/db/schema";
 import { requireTestDatabaseOrSkip } from "@base-template/db/testing";
 import { call, ORPCError } from "@orpc/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { inArray } from "drizzle-orm";
 
 import { createRestaurantHarness } from "../../testing/restaurant-fixtures";
 import type { RestaurantHarness, RestaurantSeed } from "../../testing/restaurant-fixtures";
@@ -485,6 +486,37 @@ describe.skipIf(!reachable)("restaurant menu and setup review", () => {
   });
 
   describe("setup.review", () => {
+    const setNit = async (nit: string | null) => {
+      await harness.db
+        .update(schema.location)
+        .set({ nit })
+        .where(inArray(schema.location.id, [seed.locations.a, seed.locations.b]));
+    };
+
+    beforeEach(async () => {
+      await setNit("900123456-8");
+    });
+
+    test("warns when the Location has no NIT", async () => {
+      await setNit(null);
+      const review = await call(
+        restaurantRouter.setup.review,
+        { locationId: seed.locations.b },
+        { context: await as("owner") },
+      );
+      expect(review.missingNit).toBe(true);
+      expect(review.warningCount).toBe(1);
+    });
+
+    test("a Location with a NIT does not warn about it", async () => {
+      const review = await call(
+        restaurantRouter.setup.review,
+        { locationId: seed.locations.b },
+        { context: await as("owner") },
+      );
+      expect(review.missingNit).toBe(false);
+    });
+
     test("warns about unrouted items, empty Areas and idle Stations, with the tip signage reminder", async () => {
       const category = await newCategory();
       const routed = await newItem(category.id, { name: "Routed" });

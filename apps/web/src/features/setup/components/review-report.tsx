@@ -3,7 +3,7 @@ import { Button } from "@base-template/ui/components/button";
 import { CircleCheck, TriangleAlert } from "lucide-react";
 
 import { SETUP_STEP_LABELS, type SetupStep } from "../lib/setup-steps";
-import { reminderText, reviewSections, type ReviewData } from "../lib/review-warnings";
+import { nitWarning, reminderText, reviewSections, type ReviewData } from "../lib/review-warnings";
 
 /** Revisar step: setup warnings grouped by the step that fixes them, plus legal reminders. */
 export default function ReviewReport({
@@ -14,9 +14,17 @@ export default function ReviewReport({
   onGoToStep: (step: SetupStep) => void;
 }) {
   const sections = reviewSections(review);
+  const nit = nitWarning(review.missingNit);
   return (
     <div className="space-y-4">
-      {sections.length === 0 ? (
+      {nit ? (
+        <Alert variant="destructive">
+          <TriangleAlert />
+          <AlertTitle>{nit.title}</AlertTitle>
+          <AlertDescription>{nit.hint}</AlertDescription>
+        </Alert>
+      ) : null}
+      {sections.length === 0 && !nit ? (
         <Alert>
           <CircleCheck />
           <AlertTitle>Todo en orden</AlertTitle>

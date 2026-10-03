@@ -14,7 +14,7 @@ export const setupRouter = {
     .use(requirePermission({ setup: ["manage"] }))
     .input(z.object({ locationId: z.string().min(1) }))
     .handler(async ({ context, input }) => {
-      await assertLocationAccess(context, input.locationId);
+      const location = await assertLocationAccess(context, input.locationId);
 
       const unroutedMenuItems = await context.db
         .select({ id: schema.menuItem.id, name: schema.menuItem.name })
@@ -63,11 +63,15 @@ export const setupRouter = {
         .having(sql`${count(schema.stationRouting.id)} = 0`)
         .orderBy(asc(schema.station.name));
 
+      const missingNit = !location.nit;
+
       return {
         unroutedMenuItems,
         emptyAreas,
         idleStations,
-        warningCount: unroutedMenuItems.length + emptyAreas.length + idleStations.length,
+        missingNit,
+        warningCount:
+          unroutedMenuItems.length + emptyAreas.length + idleStations.length + Number(missingNit),
         reminders: ["advertencia_propina"] as const,
       };
     }),

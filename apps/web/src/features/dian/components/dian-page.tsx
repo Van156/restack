@@ -26,6 +26,7 @@ import {
 } from "../lib/connection-form";
 import { toCountRows, toIncidentRows, toOutboxRows } from "../lib/dian-rows";
 import { DIAN_VIEWS, type DianSearch, type DianView } from "../lib/dian-search";
+import { missingNitNotice } from "../lib/dian-errors";
 import { choiceCopy, dianSummary, habilitacionSteps } from "../lib/habilitacion";
 import ConnectionForm from "./connection-form";
 import DianStatusCard from "./dian-status-card";
@@ -116,6 +117,7 @@ function ConnectionSection({ location }: { location: LocationView }) {
   const values =
     draft ?? (state.connection ? formFromConnection(state.connection) : emptyConnectionForm());
   const copy = choiceCopy(!state.enabled);
+  const nitNotice = missingNitNotice(location.nit);
 
   function save() {
     const result = validateConnectionForm(values, state.habilitacion);
@@ -150,6 +152,11 @@ function ConnectionSection({ location }: { location: LocationView }) {
         <h2 id="dian-connection-title" className="font-medium">
           Conexión con el proveedor
         </h2>
+        {nitNotice ? (
+          <p role="alert" className="rounded-md border border-destructive/50 p-3 text-sm">
+            {nitNotice}
+          </p>
+        ) : null}
         <ConnectionForm
           values={values}
           errors={errors}

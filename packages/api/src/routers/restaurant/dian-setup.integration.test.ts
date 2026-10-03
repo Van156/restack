@@ -27,7 +27,15 @@ describe.skipIf(!reachable)("restaurant DIAN: choice and connection", () => {
   });
   beforeEach(async () => {
     scenario = await seedDianScenario(harness, { enabled: false, connect: false });
+    await setNit("900123456-8");
   });
+
+  const setNit = async (nit: string | null) => {
+    await harness.db
+      .update(schema.location)
+      .set({ nit })
+      .where(eq(schema.location.id, scenario.locationId));
+  };
 
   type StaffKey = Parameters<typeof scenario.as>[0];
 
@@ -106,6 +114,15 @@ describe.skipIf(!reachable)("restaurant DIAN: choice and connection", () => {
     expect(updated.habilitacion).toBe("enabled");
     expect(await harness.db.select().from(schema.dianConnection)).toHaveLength(1);
     expect(await auditRows("dian.connected")).toHaveLength(2);
+  });
+
+  test("connecting needs the Location NIT, with a reason the page can show", async () => {
+    await setNit(null);
+    expect(await scenario.codeOf(connect())).toBe("PRECONDITION_FAILED");
+    await expect(connect()).rejects.toThrow("Set the Location NIT before connecting DIAN.");
+    expect(await harness.db.select().from(schema.dianConnection)).toHaveLength(0);
+    await setNit("900123456-8");
+    expect(await connect()).toMatchObject({ provider: "alegra" });
   });
 
   test("a Cashier or Waiter cannot connect, and Location scope applies", async () => {

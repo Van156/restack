@@ -22,6 +22,7 @@ const meta = {
       ],
       emptyAreas: [{ id: "a1", name: "Terraza" }],
       idleStations: [],
+      missingNit: false,
       warningCount: 3,
       reminders: ["advertencia_propina"],
     },
@@ -41,7 +42,22 @@ export const AllClear: Story = {
       unroutedMenuItems: [],
       emptyAreas: [],
       idleStations: [],
+      missingNit: false,
       warningCount: 0,
+      reminders: ["advertencia_propina"],
+    },
+  },
+};
+
+/** The Location has no NIT: the warning points to the Locales page. */
+export const MissingNit: Story = {
+  args: {
+    review: {
+      unroutedMenuItems: [],
+      emptyAreas: [],
+      idleStations: [],
+      missingNit: true,
+      warningCount: 1,
       reminders: ["advertencia_propina"],
     },
   },
