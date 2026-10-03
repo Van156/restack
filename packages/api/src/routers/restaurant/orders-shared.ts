@@ -113,3 +113,48 @@ export async function resolveActingMemberId(
   }
   return acting.id;
 }
+
+export type OrderLineRow = typeof schema.orderLine.$inferSelect;
+
+/** Loads an Order line of the caller's organization with its session, checking Location access. */
+export async function loadLineInScope(
+  context: OrderContext,
+  lineId: string,
+): Promise<{ line: OrderLineRow; session: TableSessionRow }> {
+  const [line] = await context.db
+    .select()
+    .from(schema.orderLine)
+    .where(
+      and(eq(schema.orderLine.id, lineId), eq(schema.orderLine.organizationId, context.org.id)),
+    );
+  if (!line) {
+    throw new ORPCError("NOT_FOUND", { message: "Order line not found." });
+  }
+  return { line, session: await loadSessionInScope(context, line.tableSessionId) };
+}
+
+/** The void a client already recorded under this idempotency key, if any (a replay). */
+export async function findVoidByKey(context: OrderContext, key: string, lineId: string) {
+  const [replay] = await context.db
+    .select()
+    .from(schema.orderLineVoid)
+    .where(
+      and(
+        eq(schema.orderLineVoid.organizationId, context.org.id),
+        eq(schema.orderLineVoid.idempotencyKey, key),
+      ),
+    );
+  if (replay && replay.orderLineId !== lineId) {
+    throw new ORPCError("CONFLICT", { message: "This idempotency key was already used." });
+  }
+  return replay;
+}
+
+/** True when the line was sent to the kitchen (it sits on a Ticket). */
+export async function isLineSent(context: OrderContext, lineId: string): Promise<boolean> {
+  const [row] = await context.db
+    .select({ ticketId: schema.ticketLine.ticketId })
+    .from(schema.ticketLine)
+    .where(eq(schema.ticketLine.orderLineId, lineId));
+  return Boolean(row);
+}

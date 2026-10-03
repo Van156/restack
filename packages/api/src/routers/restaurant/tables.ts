@@ -5,8 +5,9 @@ import { z } from "zod";
 
 import { orgProcedure, requirePermission } from "../../index";
 import { assertLocationAccess } from "../../lib/location-scope";
+import { hasOpenSessionAtTable } from "../../lib/table-session";
 import { loadAreaInScope } from "./areas";
-import { definedFields, orConflict } from "./setup-helpers";
+import { definedFields, orConflict, orRestricted } from "./setup-helpers";
 
 const name = z.string().trim().min(1).max(80);
 const seats = z.number().int().min(1).max(100);
@@ -193,7 +194,14 @@ export const tablesRouter = {
         throw new ORPCError("NOT_FOUND", { message: "Table not found." });
       }
       await assertLocationAccess(context, table.locationId);
-      await context.db.delete(schema.diningTable).where(eq(schema.diningTable.id, table.id));
+      if (await hasOpenSessionAtTable(context.db, table.id)) {
+        throw new ORPCError("CONFLICT", {
+          message: "This Table has an open session. Settle it before deleting the Table.",
+        });
+      }
+      await orRestricted("This Table has order history, so it cannot be deleted.", () =>
+        context.db.delete(schema.diningTable).where(eq(schema.diningTable.id, table.id)),
+      );
       return { deleted: true };
     }),
 };

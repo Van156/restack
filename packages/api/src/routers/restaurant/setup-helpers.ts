@@ -24,6 +24,30 @@ export async function orConflict<T>(message: string, write: () => Promise<T>): P
   }
 }
 
+/** True when a Postgres foreign key refused the statement (a row still references the target). */
+export function isForeignKeyViolation(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current && typeof current === "object"; depth += 1) {
+    if ((current as { code?: unknown }).code === "23503") {
+      return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/** Runs a delete, mapping a foreign-key refusal to a CONFLICT with a user-facing message. */
+export async function orRestricted<T>(message: string, write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (error) {
+    if (isForeignKeyViolation(error)) {
+      throw new ORPCError("CONFLICT", { message });
+    }
+    throw error;
+  }
+}
+
 /** Drops `undefined` entries so a partial update only touches the fields the caller sent. */
 export function definedFields<T extends Record<string, unknown>>(input: T): Partial<T> {
   return Object.fromEntries(

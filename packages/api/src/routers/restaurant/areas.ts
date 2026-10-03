@@ -6,7 +6,8 @@ import { z } from "zod";
 import { orgProcedure, requirePermission } from "../../index";
 import { assertLocationAccess } from "../../lib/location-scope";
 import type { LocationScopeContext } from "../../lib/location-scope";
-import { definedFields, orConflict } from "./setup-helpers";
+import { hasOpenBillsInArea } from "../../lib/table-session";
+import { definedFields, orConflict, orRestricted } from "./setup-helpers";
 
 const name = z.string().trim().min(1).max(80);
 
@@ -22,6 +23,8 @@ export async function loadAreaInScope(context: LocationScopeContext, areaId: str
   await assertLocationAccess(context, row.locationId);
   return row;
 }
+
+const AREA_HAS_HISTORY = "A Table of this Area has order history, so the Area cannot be deleted.";
 
 const NAME_TAKEN = "An Area with this name already exists in this Location.";
 
@@ -99,15 +102,23 @@ export const areasRouter = {
     }),
 
   /**
-   * Deletes an Area and its Tables. Table sessions do not exist yet: T4 (orders) must add the
-   * guard that blocks deletion while an open Bill sits on one of the Area's Tables.
+   * Deletes an Area and its Tables. Refused while a Table of the Area has an open Table session
+   * (an open Bill), and for any Table that ever had one: Table sessions keep their Table
+   * (`no action`), so order and Bill history never disappears.
    */
   delete: orgProcedure
     .use(requirePermission({ setup: ["manage"] }))
     .input(z.object({ areaId: z.string().min(1) }))
     .handler(async ({ context, input }) => {
       const area = await loadAreaInScope(context, input.areaId);
-      await context.db.delete(schema.area).where(eq(schema.area.id, area.id));
+      if (await hasOpenBillsInArea(context.db, area.id)) {
+        throw new ORPCError("CONFLICT", {
+          message: "This Area has Tables with open Bills. Settle them before deleting it.",
+        });
+      }
+      await orRestricted(AREA_HAS_HISTORY, () =>
+        context.db.delete(schema.area).where(eq(schema.area.id, area.id)),
+      );
       return { deleted: true };
     }),
 };

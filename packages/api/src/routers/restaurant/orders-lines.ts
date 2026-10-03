@@ -7,6 +7,9 @@ import { orgProcedure, requirePermission } from "../../index";
 import {
   actingTokenInput,
   assertSessionUnsettled,
+  findVoidByKey,
+  isLineSent,
+  loadLineInScope,
   loadSessionInScope,
   resolveActingMemberId,
 } from "./orders-shared";
@@ -233,42 +236,13 @@ export const orderLinesRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const [line] = await context.db
-        .select()
-        .from(schema.orderLine)
-        .where(
-          and(
-            eq(schema.orderLine.id, input.lineId),
-            eq(schema.orderLine.organizationId, context.org.id),
-          ),
-        );
-      if (!line) {
-        throw new ORPCError("NOT_FOUND", { message: "Order line not found." });
-      }
-      const session = await loadSessionInScope(context, line.tableSessionId);
-
-      const [replay] = await context.db
-        .select()
-        .from(schema.orderLineVoid)
-        .where(
-          and(
-            eq(schema.orderLineVoid.organizationId, context.org.id),
-            eq(schema.orderLineVoid.idempotencyKey, input.idempotencyKey),
-          ),
-        );
+      const { line, session } = await loadLineInScope(context, input.lineId);
+      const replay = await findVoidByKey(context, input.idempotencyKey, line.id);
       if (replay) {
-        if (replay.orderLineId !== line.id) {
-          throw new ORPCError("CONFLICT", { message: "This idempotency key was already used." });
-        }
         return replay;
       }
       assertSessionUnsettled(session);
-
-      const [sent] = await context.db
-        .select({ ticketId: schema.ticketLine.ticketId })
-        .from(schema.ticketLine)
-        .where(eq(schema.ticketLine.orderLineId, line.id));
-      if (sent) {
+      if (await isLineSent(context, line.id)) {
         throw new ORPCError("CONFLICT", {
           message: "This line was sent to the kitchen; voiding it needs an Override.",
         });
