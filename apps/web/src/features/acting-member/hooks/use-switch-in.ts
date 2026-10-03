@@ -21,9 +21,10 @@ export function useSwitchIn(locationId: string) {
   const { clock } = useRuntime();
   const offline = useOfflineQueue();
   const { credentials } = useOfflineCredentials(locationId);
+  const scope = useMemo(() => ({ organizationId, locationId }), [organizationId, locationId]);
   const throttle = useMemo(
-    () => createPinThrottle(window.localStorage, throttleKey(organizationId, locationId)),
-    [organizationId, locationId],
+    () => createPinThrottle(window.localStorage, throttleKey(scope)),
+    [scope],
   );
 
   return (memberId: string, pin: string) =>
@@ -38,7 +39,7 @@ export function useSwitchIn(locationId: string) {
               credentials,
               throttle,
               open: openOfflineSigner,
-              scope: { organizationId, locationId },
+              scope,
               now: clock.now(),
             },
             member,

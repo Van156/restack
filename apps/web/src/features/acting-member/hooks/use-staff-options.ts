@@ -22,7 +22,11 @@ export function useStaffOptions(locationId: string): {
   const { data: organization } = authClient.useActiveOrganization();
   const organizationId = organization?.id;
   const cache = useMemo(
-    () => createRosterCache(window.localStorage, rosterKey(organizationId ?? "", locationId)),
+    () =>
+      createRosterCache(
+        window.localStorage,
+        rosterKey({ organizationId: organizationId ?? "", locationId }),
+      ),
     [organizationId, locationId],
   );
   const query = useQuery({

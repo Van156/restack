@@ -110,7 +110,7 @@ describe("openOfflineSigner against the server reference", () => {
   test("refuses a KDF the contract does not define", async () => {
     const material = {
       ...SERVER_VECTOR.material,
-      params: { ...SERVER_VECTOR.material.params, kdf: "argon2" },
+      params: { ...SERVER_VECTOR.material.params, kdf: "argon2" as "scrypt" },
     };
     await expect(openOfflineSigner(material, "4821", scope)).rejects.toThrow("scrypt");
   });

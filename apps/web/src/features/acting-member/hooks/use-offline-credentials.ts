@@ -28,10 +28,13 @@ export function useOfflineCredentials(locationId: string) {
   const organizationId = organization?.id;
   const { clock, timer } = useRuntime();
   const { online, records } = useOfflineQueue();
-  const store = useMemo(
-    () =>
-      createCredentialStore(window.localStorage, credentialsKey(organizationId ?? "", locationId)),
+  const scope = useMemo(
+    () => ({ organizationId: organizationId ?? "", locationId }),
     [organizationId, locationId],
+  );
+  const store = useMemo(
+    () => createCredentialStore(window.localStorage, credentialsKey(scope)),
+    [scope],
   );
   const [credentials, setCredentials] = useState<StoredCredentials | undefined>(() => store.read());
   const [tick, setTick] = useState(0);

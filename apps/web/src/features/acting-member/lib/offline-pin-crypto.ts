@@ -1,5 +1,7 @@
 import { scryptAsync } from "@noble/hashes/scrypt.js";
 
+import { base64UrlDecode, base64UrlEncode } from "@/shared/lib/base64url";
+
 /** Device side of the offline PIN contract. See docs/architecture/restaurant.md#offline-pin. */
 
 /** One Staff member's material as `staff.offlineCredentials` returns it. Never holds the PIN. */
@@ -8,7 +10,7 @@ export type OfflineMaterial = {
   name: string;
   role: string;
   salt: string;
-  params: { kdf: string; N: number; r: number; p: number; dkLen: number };
+  params: { kdf: "scrypt"; N: number; r: number; p: number; dkLen: number };
   sealedKey: string;
   epoch: number;
   expiresAt: Date;
@@ -43,18 +45,6 @@ function bytesFromHex(hex: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-function bytesFromBase64Url(text: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(text.replaceAll("-", "+").replaceAll("_", "/"));
-  return Uint8Array.from(binary, (char) => char.codePointAt(0) ?? 0);
-}
-
-function base64UrlOf(bytes: Uint8Array): string {
-  return btoa(String.fromCodePoint(...bytes))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replaceAll("=", "");
-}
-
 /** AES-256-GCM open of `nonce || ciphertext || tag`; null when the tag fails (a wrong PIN). */
 async function openSealed(
   pinKey: Uint8Array<ArrayBuffer>,
@@ -63,7 +53,7 @@ async function openSealed(
 ): Promise<Uint8Array<ArrayBuffer> | null> {
   let sealed: Uint8Array<ArrayBuffer>;
   try {
-    sealed = bytesFromBase64Url(sealedKey);
+    sealed = base64UrlDecode(sealedKey);
   } catch {
     return null;
   }
@@ -145,7 +135,7 @@ export async function openOfflineSigner(
       return {
         memberId: material.memberId,
         epoch: material.epoch,
-        mac: base64UrlOf(new Uint8Array(mac)),
+        mac: base64UrlEncode(new Uint8Array(mac)),
       };
     },
   };

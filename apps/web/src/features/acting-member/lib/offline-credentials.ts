@@ -1,12 +1,12 @@
-import { createJsonSlot, type SlotStorage } from "./json-slot";
-import type { OfflineMaterial } from "./offline-pin-crypto";
+import { createJsonSlot, type SlotStorage } from "@/shared/lib/json-slot";
+import type { OfflineMaterial, OfflineScope } from "./offline-pin-crypto";
 
 /** The device re-fetches its material about once a day while online. */
 export const CREDENTIAL_REFRESH_MS = 24 * 60 * 60 * 1000;
 
 export type StoredCredentials = { fetchedAt: Date; members: OfflineMaterial[] };
 
-export function credentialsKey(organizationId: string, locationId: string): string {
+export function credentialsKey({ organizationId, locationId }: OfflineScope): string {
   return `restack:offline-pin:${organizationId}:${locationId}`;
 }
 
@@ -31,7 +31,7 @@ function parseMaterial(raw: unknown): OfflineMaterial | undefined {
   }
   const { kdf, N, r, p, dkLen } = raw.params;
   if (
-    typeof kdf !== "string" ||
+    kdf !== "scrypt" ||
     typeof N !== "number" ||
     typeof r !== "number" ||
     typeof p !== "number" ||

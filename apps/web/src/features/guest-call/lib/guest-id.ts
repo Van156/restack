@@ -1,3 +1,5 @@
+import { base64UrlEncode } from "@/shared/lib/base64url";
+
 export const GUEST_ID_KEY = "restack.guest-id";
 
 /** The slice of `Storage` the guest id needs; it may throw (private mode, blocked storage). */
@@ -8,12 +10,7 @@ const GUEST_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 
 /** A random, url-safe id from 16 random bytes (22 characters). */
 export function newGuestId(randomBytes: (length: number) => Uint8Array): string {
-  const bytes = randomBytes(16);
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+  return base64UrlEncode(randomBytes(16));
 }
 
 /** Browser source of random bytes. */

@@ -11,16 +11,33 @@ const roster = [
 describe("roster cache", () => {
   test("keeps the Location's Staff per organization and Location", () => {
     const storage = memoryStorage();
-    createRosterCache(storage, rosterKey("org_1", "loc_1")).write(roster);
+    createRosterCache(storage, rosterKey({ organizationId: "org_1", locationId: "loc_1" })).write(
+      roster,
+    );
 
-    expect(createRosterCache(storage, rosterKey("org_1", "loc_1")).read()).toEqual(roster);
-    expect(createRosterCache(storage, rosterKey("org_1", "loc_2")).read()).toBeUndefined();
-    expect(createRosterCache(storage, rosterKey("org_2", "loc_1")).read()).toBeUndefined();
+    expect(
+      createRosterCache(
+        storage,
+        rosterKey({ organizationId: "org_1", locationId: "loc_1" }),
+      ).read(),
+    ).toEqual(roster);
+    expect(
+      createRosterCache(
+        storage,
+        rosterKey({ organizationId: "org_1", locationId: "loc_2" }),
+      ).read(),
+    ).toBeUndefined();
+    expect(
+      createRosterCache(
+        storage,
+        rosterKey({ organizationId: "org_2", locationId: "loc_1" }),
+      ).read(),
+    ).toBeUndefined();
   });
 
   test("stores names and roles only, never PIN material", () => {
     const storage = memoryStorage();
-    const key = rosterKey("org_1", "loc_1");
+    const key = rosterKey({ organizationId: "org_1", locationId: "loc_1" });
     createRosterCache(storage, key).write(roster);
 
     expect(storage.getItem(key)).not.toContain("sealedKey");

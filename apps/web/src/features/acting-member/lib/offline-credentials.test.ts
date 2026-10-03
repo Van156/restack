@@ -33,14 +33,30 @@ const stored = (members: OfflineMaterial[]): StoredCredentials => ({ fetchedAt, 
 describe("credential store", () => {
   test("keeps material per organization and Location, with dates restored", () => {
     const storage = memoryStorage();
-    const store = createCredentialStore(storage, credentialsKey("org_1", "loc_1"));
+    const store = createCredentialStore(
+      storage,
+      credentialsKey({ organizationId: "org_1", locationId: "loc_1" }),
+    );
     store.write(stored([material("m1")]));
 
-    const read = createCredentialStore(storage, credentialsKey("org_1", "loc_1")).read();
+    const read = createCredentialStore(
+      storage,
+      credentialsKey({ organizationId: "org_1", locationId: "loc_1" }),
+    ).read();
     expect(read?.fetchedAt).toEqual(fetchedAt);
     expect(read?.members[0]?.expiresAt).toBeInstanceOf(Date);
-    expect(createCredentialStore(storage, credentialsKey("org_1", "loc_2")).read()).toBeUndefined();
-    expect(createCredentialStore(storage, credentialsKey("org_2", "loc_1")).read()).toBeUndefined();
+    expect(
+      createCredentialStore(
+        storage,
+        credentialsKey({ organizationId: "org_1", locationId: "loc_2" }),
+      ).read(),
+    ).toBeUndefined();
+    expect(
+      createCredentialStore(
+        storage,
+        credentialsKey({ organizationId: "org_2", locationId: "loc_1" }),
+      ).read(),
+    ).toBeUndefined();
   });
 
   test("never stores anything but the sealed material (no PIN field exists)", () => {

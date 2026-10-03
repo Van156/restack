@@ -1,3 +1,5 @@
+import { createJsonSlot, type SlotStorage } from "@/shared/lib/json-slot";
+
 import type { FloorArea, FloorSession, FloorTable } from "./floor-plan";
 import type { MenuPickCategory } from "./menu-view";
 import type { ServerLine } from "./order-view";
@@ -29,25 +31,14 @@ export function waiterCacheKey(organizationId: string, locationId: string): stri
  * What the Waiter needs to keep working offline: Areas, Tables, menu, open sessions and their
  * lines, as plain JSON. No tokens, PINs or PIN hashes. See docs/architecture/web-app.md#waiter-pages.
  */
-export function createWaiterCache(
-  storage: Pick<Storage, "getItem" | "setItem">,
-  key: string,
-): WaiterCache {
-  function load(): Partial<CacheShape> {
-    try {
-      const parsed: unknown = JSON.parse(storage.getItem(key) ?? "{}");
-      return parsed && typeof parsed === "object" ? (parsed as Partial<CacheShape>) : {};
-    } catch {
-      return {};
-    }
-  }
-  function save(next: Partial<CacheShape>) {
-    try {
-      storage.setItem(key, JSON.stringify(next));
-    } catch {
-      // A full or unavailable storage only costs the offline copy.
-    }
-  }
+export function createWaiterCache(storage: SlotStorage, key: string): WaiterCache {
+  const slot = createJsonSlot(storage, key, (raw) =>
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Partial<CacheShape>)
+      : undefined,
+  );
+  const load = (): Partial<CacheShape> => slot.read() ?? {};
+  const save = (next: Partial<CacheShape>) => slot.write(next);
   return {
     read: (slot) => load()[slot],
     write(slot, value) {

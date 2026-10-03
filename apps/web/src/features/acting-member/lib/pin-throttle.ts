@@ -1,4 +1,5 @@
-import { createJsonSlot, type SlotStorage } from "./json-slot";
+import { createJsonSlot, type SlotStorage } from "@/shared/lib/json-slot";
+import type { OfflineScope } from "./offline-pin-crypto";
 
 /** Wrong offline PINs before a member is locked out on this device. */
 export const MAX_PIN_ATTEMPTS = 5;
@@ -10,7 +11,7 @@ type State = Record<string, MemberState>;
 
 export type ThrottleCheck = { locked: false } | { locked: true; until: Date };
 
-export function throttleKey(organizationId: string, locationId: string): string {
+export function throttleKey({ organizationId, locationId }: OfflineScope): string {
   return `restack:offline-pin-throttle:${organizationId}:${locationId}`;
 }
 

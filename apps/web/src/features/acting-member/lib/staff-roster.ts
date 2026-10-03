@@ -1,7 +1,8 @@
-import { createJsonSlot, type SlotStorage } from "./json-slot";
+import { createJsonSlot, type SlotStorage } from "@/shared/lib/json-slot";
 import type { StaffOption } from "./acting-member";
+import type { OfflineScope } from "./offline-pin-crypto";
 
-export function rosterKey(organizationId: string, locationId: string): string {
+export function rosterKey({ organizationId, locationId }: OfflineScope): string {
   return `restack:staff-roster:${organizationId}:${locationId}`;
 }
 

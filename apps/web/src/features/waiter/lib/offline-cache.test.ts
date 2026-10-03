@@ -7,6 +7,7 @@ function memoryStorage(initial: Record<string, string> = {}) {
   return {
     getItem: (key: string) => data.get(key) ?? null,
     setItem: (key: string, value: string) => void data.set(key, value),
+    removeItem: (key: string) => void data.delete(key),
     raw: (key: string) => data.get(key),
   };
 }
@@ -43,6 +44,7 @@ describe("createWaiterCache", () => {
     const cache = createWaiterCache(
       {
         getItem: () => null,
+        removeItem: () => {},
         setItem: () => {
           throw new Error("QuotaExceededError");
         },
