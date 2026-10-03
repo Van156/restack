@@ -9,6 +9,7 @@ import { addLineCore, addLineInput, findLineByKey } from "./orders-lines";
 import type { RecordedPrices } from "./orders-lines";
 import { actingTokenInput, idempotencyKey } from "./orders-shared";
 import type { OrderContext } from "./orders-shared";
+import { sendToKitchenCore } from "./orders-kitchen";
 import { voidLineCore } from "./orders-voids";
 import { paymentObject, recordPaymentCore, refinePayment, settleCore } from "./billing-payments";
 import { issueDocumentCore } from "./dian-documents";
@@ -32,6 +33,7 @@ export const SYNC_KINDS = [
   "open_session",
   "move_session",
   "order_line",
+  "send_to_kitchen",
   "void",
   "payment",
   "table_metadata",
@@ -67,6 +69,8 @@ const orderLinePayload = addLineInput
       .default([]),
   })
   .superRefine(exactlyOneSessionRef);
+
+const sendToKitchenPayload = z.object(sessionRefShape).superRefine(exactlyOneSessionRef);
 
 const voidPayload = z
   .object({
@@ -181,6 +185,17 @@ async function applyRecord(
         recorded,
       );
       return { status: appliedOrReplayed(replayed), entityId: line.id };
+    }
+    case "send_to_kitchen": {
+      await requirePermissions(context, { order: ["take"] });
+      const { sessionKey, ...payload } = parse(sendToKitchenPayload, record.payload);
+      const { tickets, replayed } = await sendToKitchenCore(context, {
+        tableSessionId: await resolveSessionId(context, { ...payload, sessionKey }),
+        actingToken: record.actingToken,
+        sentAt: deviceAt,
+        sendKey: record.idempotencyKey,
+      });
+      return { status: appliedOrReplayed(replayed), entityId: tickets[0]?.id };
     }
     case "void": {
       await requirePermissions(context, { order: ["take"] });

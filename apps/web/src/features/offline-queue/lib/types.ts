@@ -5,6 +5,7 @@ export const QUEUE_KINDS = [
   "open_session",
   "move_session",
   "order_line",
+  "send_to_kitchen",
   "void",
   "payment",
   "table_metadata",

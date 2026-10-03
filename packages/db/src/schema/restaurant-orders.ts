@@ -245,6 +245,8 @@ export const ticket = pgTable(
     status: ticketStatus("status").default("nuevo").notNull(),
     sentByMemberId: memberRef("sent_by_member_id"),
     sentAt: timestamp("sent_at").notNull(),
+    /** Idempotency key of the synced send that made this Ticket (one key, one Ticket per Station). */
+    sendKey: text("send_key"),
     startedAt: timestamp("started_at"),
     readyAt: timestamp("ready_at"),
     deliveredAt: timestamp("delivered_at"),
@@ -254,6 +256,9 @@ export const ticket = pgTable(
     index("ticket_tableSessionId_idx").on(table.tableSessionId),
     index("ticket_station_status_idx").on(table.stationId, table.status),
     index("ticket_organizationId_idx").on(table.organizationId),
+    uniqueIndex("ticket_send_key_station_unique")
+      .on(table.organizationId, table.sendKey, table.stationId)
+      .where(sql`${table.sendKey} IS NOT NULL`),
   ],
 );
 

@@ -1,0 +1,2 @@
+ALTER TABLE "ticket" ADD COLUMN "send_key" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "ticket_send_key_station_unique" ON "ticket" ("organization_id","send_key","station_id") WHERE "send_key" IS NOT NULL;
