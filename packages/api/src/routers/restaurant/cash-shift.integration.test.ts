@@ -128,8 +128,31 @@ describe.skipIf(!reachable)("restaurant cash shift: open, ledger and close", () 
       expect(row?.cashShiftId).toBe(shift.id);
     });
 
-    test("without an open shift the payment is still recorded, unattached", async () => {
+    test("without an open shift the payment is still recorded, unattached until a shift opens", async () => {
       await pay("cash", 5_000);
+      const [row] = await harness.db.select().from(schema.payment);
+      expect(row?.cashShiftId).toBeNull();
+    });
+
+    test("shiftless payments join the next shift opened at that Location, ledger and close included", async () => {
+      await pay("cash", 5_000);
+      const shift = await scenario.openShift(10_000);
+      const [row] = await harness.db.select().from(schema.payment);
+      expect(row?.cashShiftId).toBe(shift.id);
+      const result = await ledger(shift.id);
+      expect(result.takings.cash).toEqual({ amount: 5_000, count: 1 });
+      expect(result.expected.cash).toBe(15_000);
+      const closed = await close(shift.id, { cash: 15_000, card: 0, qr_transfer: 0 });
+      expect(closed.difference).toBe(0);
+    });
+
+    test("another Location's shiftless payments are not attached", async () => {
+      await pay("cash", 5_000);
+      await call(
+        restaurantRouter.cashShift.open,
+        { locationId: scenario.seed.locations.b, openingAmount: 0 },
+        { context: await scenario.as("owner") },
+      );
       const [row] = await harness.db.select().from(schema.payment);
       expect(row?.cashShiftId).toBeNull();
     });

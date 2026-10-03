@@ -1,7 +1,7 @@
 import * as schema from "@base-template/db/schema";
 import { PAYMENT_TENDERS } from "@base-template/db/schema/restaurant-billing";
 import { ORPCError } from "@orpc/server";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { orgProcedure, requirePermission } from "../../index";
@@ -17,7 +17,10 @@ const shiftInput = z.object({ cashShiftId: z.string().min(1) });
 const manageShift = requirePermission({ cashShift: ["manage"] });
 
 export const cashShiftCoreRouter = {
-  /** Opens the Location's Cash shift. One open shift per Location; a second open is CONFLICT. */
+  /**
+   * Opens the Location's Cash shift (a second open is CONFLICT) and attaches the Location's
+   * shiftless payments to it.
+   */
   open: orgProcedure
     .use(manageShift)
     .input(z.object({ locationId: z.string().min(1), openingAmount: amount }))
@@ -36,6 +39,17 @@ export const cashShiftCoreRouter = {
             })
             .returning(),
         );
+        // Payments taken while no shift was open belong to the next one.
+        const attached = await tx
+          .update(schema.payment)
+          .set({ cashShiftId: shift!.id })
+          .where(
+            and(
+              eq(schema.payment.locationId, input.locationId),
+              isNull(schema.payment.cashShiftId),
+            ),
+          )
+          .returning({ id: schema.payment.id });
         await recordAuditThrough(tx, {
           scope: "organization",
           organizationId: context.org.id,
@@ -43,7 +57,11 @@ export const cashShiftCoreRouter = {
           action: "cash_shift.opened",
           targetType: "cash_shift",
           targetId: shift!.id,
-          metadata: { locationId: input.locationId, openingAmount: input.openingAmount },
+          metadata: {
+            locationId: input.locationId,
+            openingAmount: input.openingAmount,
+            attachedPayments: attached.length,
+          },
         });
         return shift!;
       });
