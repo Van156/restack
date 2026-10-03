@@ -69,18 +69,22 @@ export function assertSessionUnsettled(session: TableSessionRow): void {
 
 const INVALID_ACTING_TOKEN = "The acting token is invalid, expired or not for this Location.";
 
+/** A member verified from an acting token, with their resolved Role permissions. */
+export type ActingMember = {
+  id: string;
+  role: string;
+  permissions: Awaited<ReturnType<typeof resolveOrgRolePermissions>>;
+};
+
 /**
- * The member an action is attributed to: the session's, or with a valid acting token the member
- * who switched in. An invalid token is FORBIDDEN, never ignored; a raw member id is never trusted.
+ * The member who switched in, verified for this Location: a valid token, a member of the
+ * organization still assigned to the Location. An invalid token is FORBIDDEN, never ignored.
  */
-export async function resolveActingMemberId(
+export async function resolveActingMember(
   context: OrderContext,
   locationId: string,
-  actingToken: string | undefined,
-): Promise<string> {
-  if (actingToken === undefined) {
-    return context.member.id;
-  }
+  actingToken: string,
+): Promise<ActingMember> {
   const claims = verifyActingToken(context.actingTokenSecret, actingToken, context.clock.now());
   if (!claims || claims.organizationId !== context.org.id || claims.locationId !== locationId) {
     throw new ORPCError("FORBIDDEN", { message: INVALID_ACTING_TOKEN });
@@ -109,7 +113,23 @@ export async function resolveActingMemberId(
     }
   }
   const permissions = await resolveOrgRolePermissions(context.db, context.org.id, acting.role);
-  if (!permissions.order?.includes("take")) {
+  return { ...acting, permissions };
+}
+
+/**
+ * The member an order action is attributed to: the session's, or with a valid acting token the
+ * member who switched in (who must hold `order:take`). A raw member id is never trusted.
+ */
+export async function resolveActingMemberId(
+  context: OrderContext,
+  locationId: string,
+  actingToken: string | undefined,
+): Promise<string> {
+  if (actingToken === undefined) {
+    return context.member.id;
+  }
+  const acting = await resolveActingMember(context, locationId, actingToken);
+  if (!acting.permissions.order?.includes("take")) {
     throw new ORPCError("FORBIDDEN", { message: "This Staff member cannot take orders." });
   }
   return acting.id;
