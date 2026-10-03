@@ -321,6 +321,9 @@ importers:
       '@base-template/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@noble/hashes':
+        specifier: ^2.4.0
+        version: 2.4.0
       '@orpc/client':
         specifier: 'catalog:'
         version: 1.15.4

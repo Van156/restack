@@ -16,6 +16,7 @@
     "@base-template/api": "workspace:*",
     "@base-template/auth": "workspace:*",
     "@base-template/ui": "workspace:*",
+    "@noble/hashes": "^2.4.0",
     "@orpc/client": "catalog:",
     "@orpc/server": "catalog:",
     "@orpc/tanstack-query": "^1.15.0",
