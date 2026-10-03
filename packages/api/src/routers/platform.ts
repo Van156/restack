@@ -12,6 +12,7 @@ import {
   platformOrganizationsListConfig,
   platformUsersListConfig,
 } from "../lib/platform-list-config";
+import { platformHealthRouter } from "./platform-health";
 
 /** Shared list inputs (spec §6.4): page, perPage, sort, filters over the allowlisted columns. */
 const usersListInput = createListInput(platformUsersListConfig);
@@ -83,4 +84,7 @@ export const platformRouter = {
       .input(organizationsListInput)
       .handler(({ context, input }) => listPlatformOrganizations(context.db, input)),
   },
+
+  /** Restaurant product health: Weekly Active and Activated Locations. */
+  health: platformHealthRouter,
 };

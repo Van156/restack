@@ -27,6 +27,10 @@ describe("platformStatements", () => {
   test("adds organization (platform-wide organization listing, R6.2)", () => {
     expect(platformStatements.organization).toEqual(["list"]);
   });
+
+  test("adds health (restaurant product-health metrics)", () => {
+    expect(platformStatements.health).toEqual(["read"]);
+  });
 });
 
 describe("platformAc", () => {
@@ -53,6 +57,10 @@ describe("superadmin role", () => {
   test("can list organizations platform-wide (R6.2)", () => {
     expect(superadmin.authorize({ organization: ["list"] }).success).toBe(true);
   });
+
+  test("can read product-health metrics", () => {
+    expect(superadmin.authorize({ health: ["read"] }).success).toBe(true);
+  });
 });
 
 describe("user role", () => {
@@ -67,5 +75,9 @@ describe("user role", () => {
 
   test("cannot list organizations platform-wide", () => {
     expect(user.authorize({ organization: ["list"] }).success).toBe(false);
+  });
+
+  test("cannot read product-health metrics", () => {
+    expect(user.authorize({ health: ["read"] }).success).toBe(false);
   });
 });

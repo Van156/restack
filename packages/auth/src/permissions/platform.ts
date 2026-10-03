@@ -6,14 +6,16 @@ import {
 } from "better-auth/plugins/admin/access";
 
 /**
- * Platform permission catalog: better-auth's admin defaults plus `audit` (R7.5, R6.7) and
- * `organization` (R6.2). The latter is template-defined: better-auth's `listOrganizations` is
- * scoped to the caller's memberships, so this gates `@base-template/auth/platform`'s own query.
+ * Platform permission catalog: better-auth's admin defaults plus `audit` (R7.5, R6.7),
+ * `organization` (R6.2) and `health` (restaurant product-health metrics). `organization` is
+ * template-defined: better-auth's `listOrganizations` is scoped to the caller's memberships, so
+ * this gates `@base-template/auth/platform`'s own query.
  */
 export const platformStatements = {
   ...adminDefaultStatements,
   audit: ["read"],
   organization: ["list"],
+  health: ["read"],
 } as const;
 
 export const platformAc = createAccessControl(platformStatements);
@@ -28,6 +30,7 @@ export const superadmin = platformAc.newRole({
   ...platformBuiltInAdminAc.statements,
   audit: ["read"],
   organization: ["list"],
+  health: ["read"],
 });
 
 /** Built-in platform role: an ordinary user, no platform permissions. */

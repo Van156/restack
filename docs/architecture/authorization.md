@@ -49,6 +49,8 @@ The port reaches the procedures through `Context` (`context.ts`): `authorization
 
 `platformProcedure(permissions)` checks `hasPlatformPermission(session.user.id, permissions)`. Actor identity comes from the session, never from input.
 
+Platform catalog additions beyond better-auth's admin defaults: `audit:read`, `organization:list` and `health:read` (restaurant product-health metrics, see [restaurant.md](./restaurant.md#product-health)); `superadmin` holds all three.
+
 ## User-scoped audit reads
 
 Security-log rows (`scope = "user"`) have no organization, so no org permission reads them and organization admins never see them. `audit.listSelf` is a `protectedProcedure` that takes the user from the session, never from input. `audit.listUser` is `platformProcedure({ audit: ["read"] })`, so superadmin only, and takes `{ userId, ...listInput }`; the platform activity list excludes the user scope. See [audit-log.md](./audit-log.md#user-reads).
