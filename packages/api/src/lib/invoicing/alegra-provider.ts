@@ -7,6 +7,7 @@ import type {
   InvoicingProvider,
   IssueDocumentInput,
   IssueDocumentResult,
+  InvoiceLine,
   IssuedDocument,
 } from "./types";
 import { InvoicingTransientError } from "./types";
@@ -15,6 +16,7 @@ const DEFAULT_BASE_URL = "https://api.alegra.com/api/v1";
 /** DIAN generic identification for consumidor final. */
 const CONSUMIDOR_FINAL_ID = "222222222222";
 const OBSERVATION_PREFIX = "restack:";
+const DOCUMENT_TYPES = { pos_equivalent: "POS", factura: "INVOICE" } as const;
 
 export type AlegraProviderOptions = {
   email: string;
@@ -25,14 +27,14 @@ export type AlegraProviderOptions = {
 
 type AlegraInvoice = {
   id?: number | string;
+  observations?: string;
   numberTemplate?: { prefix?: string; number?: string | number; fullNumber?: string };
   stamp?: { cufe?: string; barCodeContent?: string };
 };
 
 /**
- * Alegra adapter. Verified against Alegra's docs: basic auth (email:token), `POST /invoices`, the
- * `stamp` object and a 400 with `message` when stamping fails. Everything else is an assumption,
- * see docs/architecture/restaurant.md#alegra-assumptions.
+ * Alegra adapter: basic auth, `POST /invoices`, the `stamp` object; the rest is assumed.
+ * See docs/architecture/restaurant.md#alegra-assumptions.
  */
 export class AlegraInvoicingProvider implements InvoicingProvider {
   private readonly baseUrl: string;
@@ -46,6 +48,11 @@ export class AlegraInvoicingProvider implements InvoicingProvider {
   }
 
   async issueDocument(input: IssueDocumentInput): Promise<IssueDocumentResult> {
+    // Alegra has no idempotency key: a POST that timed out may still have created the invoice.
+    const existing = await this.findDocument({ idempotencyKey: input.idempotencyKey });
+    if (existing) {
+      return existing;
+    }
     const response = await this.request("POST", "/invoices", this.invoiceBody(input));
     if (response.ok) {
       const issued = toIssuedDocument((await response.json()) as AlegraInvoice);
@@ -72,12 +79,15 @@ export class AlegraInvoicingProvider implements InvoicingProvider {
       return this.readOne(response);
     }
     const query = encodeURIComponent(`${OBSERVATION_PREFIX}${lookup.idempotencyKey}`);
-    const response = await this.request("GET", `/invoices?query=${query}&limit=1`);
+    const response = await this.request("GET", `/invoices?query=${query}`);
     if (!response.ok) {
       return this.readOne(response);
     }
+    // The query is a text search, so `doc-1` also hits `doc-10`: keep the exact key only.
     const list = (await response.json()) as AlegraInvoice[];
-    return list[0] ? (toIssuedDocument(list[0]) ?? null) : null;
+    const observed = `${OBSERVATION_PREFIX}${lookup.idempotencyKey}`;
+    const match = list.find((invoice) => invoice.observations === observed);
+    return match ? (toIssuedDocument(match) ?? null) : null;
   }
 
   async habilitacionStatus(_connection: InvoicingConnection): Promise<HabilitacionStatus> {
@@ -119,7 +129,7 @@ export class AlegraInvoicingProvider implements InvoicingProvider {
     }
   }
 
-  /** Assumption: inline items, `client` object and `numberTemplate.prefix`; see the architecture doc. */
+  /** Assumed request shape; see docs/architecture/restaurant.md#alegra-assumptions. */
   private invoiceBody(input: IssueDocumentInput) {
     const date = businessDayOf(input.saleTime);
     const buyer = input.buyer;
@@ -127,6 +137,7 @@ export class AlegraInvoicingProvider implements InvoicingProvider {
       date,
       dueDate: date,
       status: "open",
+      documentType: DOCUMENT_TYPES[input.kind],
       observations: `${OBSERVATION_PREFIX}${input.idempotencyKey}`,
       client:
         buyer.kind === "consumidor_final"
@@ -140,12 +151,7 @@ export class AlegraInvoicingProvider implements InvoicingProvider {
               },
               email: buyer.email ?? undefined,
             },
-      items: input.lines.map((line) => ({
-        name: line.name,
-        quantity: line.quantity,
-        price: line.base / line.quantity,
-        taxClass: line.taxClass,
-      })),
+      items: input.lines.map(toItem),
       tip: input.tip,
       numberTemplate: input.connection.numberingPrefix
         ? { prefix: input.connection.numberingPrefix }
@@ -154,6 +160,20 @@ export class AlegraInvoicingProvider implements InvoicingProvider {
       stamp: { generateStamp: true },
     };
   }
+}
+
+/**
+ * Integer COP only: when `base / quantity` is not whole the line is sent as one unit at the line
+ * base, so the provider reproduces the base exactly. The tax is our Bill's, not recomputed.
+ */
+function toItem(line: InvoiceLine) {
+  const wholeUnitPrice = line.base % line.quantity === 0;
+  return {
+    name: wholeUnitPrice ? line.name : `${line.name} x${line.quantity}`,
+    quantity: wholeUnitPrice ? line.quantity : 1,
+    price: wholeUnitPrice ? line.base / line.quantity : line.base,
+    tax: [{ name: line.taxClass, amount: line.tax }],
+  };
 }
 
 function toIssuedDocument(invoice: AlegraInvoice): IssuedDocument | null {

@@ -62,13 +62,14 @@ const provider = (responses: (Response | Error)[]) => {
 
 const acceptedBody = {
   id: 77,
+  observations: "restack:doc-1",
   numberTemplate: { prefix: "POS", number: "15", fullNumber: "POS15" },
   stamp: { cufe: "cufe-abc", barCodeContent: "qr-content" },
 };
 
 describe("AlegraInvoicingProvider", () => {
   test("issues a document with basic auth and maps the stamped response", async () => {
-    const { calls, provider: alegra } = provider([json(acceptedBody, 201)]);
+    const { calls, provider: alegra } = provider([json([]), json(acceptedBody, 201)]);
     const result = await alegra.issueDocument(input());
     expect(result).toEqual({
       status: "accepted",
@@ -77,28 +78,28 @@ describe("AlegraInvoicingProvider", () => {
       cude: "cufe-abc",
       qrData: "qr-content",
     });
-    expect(calls[0]!.url).toBe("https://alegra.test/api/v1/invoices");
-    const headers = calls[0]!.init.headers as Record<string, string>;
+    expect(calls[1]!.url).toBe("https://alegra.test/api/v1/invoices");
+    const headers = calls[1]!.init.headers as Record<string, string>;
     expect(headers.authorization).toBe(`Basic ${btoa("ops@example.com:secret-token")}`);
-    const body = JSON.parse(String(calls[0]!.init.body));
+    const body = JSON.parse(String(calls[1]!.init.body));
     expect(body.observations).toContain("doc-1");
     expect(body.date).toBe("2026-10-02");
   });
 
   test("sale date uses the Bogota calendar day", async () => {
-    const { calls, provider: alegra } = provider([json(acceptedBody)]);
+    const { calls, provider: alegra } = provider([json([]), json(acceptedBody)]);
     await alegra.issueDocument(input({ saleTime: new Date("2026-10-03T03:00:00.000Z") }));
-    expect(JSON.parse(String(calls[0]!.init.body)).date).toBe("2026-10-02");
+    expect(JSON.parse(String(calls[1]!.init.body)).date).toBe("2026-10-02");
   });
 
   test("consumidor final uses the generic DIAN identification", async () => {
-    const { calls, provider: alegra } = provider([json(acceptedBody)]);
+    const { calls, provider: alegra } = provider([json([]), json(acceptedBody)]);
     await alegra.issueDocument(input());
-    expect(JSON.parse(String(calls[0]!.init.body)).client.identification).toBe("222222222222");
+    expect(JSON.parse(String(calls[1]!.init.body)).client.identification).toBe("222222222222");
   });
 
   test("a client error is a rejection carrying the provider message", async () => {
-    const { provider: alegra } = provider([json({ message: "NIT inválido" }, 400)]);
+    const { provider: alegra } = provider([json([]), json({ message: "NIT inválido" }, 400)]);
     expect(await alegra.issueDocument(input())).toEqual({
       status: "rejected",
       reason: "NIT inválido",
@@ -107,7 +108,7 @@ describe("AlegraInvoicingProvider", () => {
 
   test("server errors, rate limits and network failures are transient", async () => {
     for (const response of [json({}, 500), json({}, 503), json({}, 429), new Error("ECONNRESET")]) {
-      const { provider: alegra } = provider([response]);
+      const { provider: alegra } = provider([json([]), response]);
       await expect(alegra.issueDocument(input())).rejects.toBeInstanceOf(InvoicingTransientError);
     }
   });
@@ -124,6 +125,74 @@ describe("AlegraInvoicingProvider", () => {
     const { provider: alegra } = provider([json([]), json({ message: "not found" }, 404)]);
     expect(await alegra.findDocument({ idempotencyKey: "nope" })).toBeNull();
     expect(await alegra.findDocument({ providerReference: "9" })).toBeNull();
+  });
+
+  test("a retry after a timed-out POST finds the created invoice instead of posting again", async () => {
+    const { calls, provider: alegra } = provider([
+      json([]),
+      new Error("timeout"),
+      json([acceptedBody]),
+    ]);
+    await expect(alegra.issueDocument(input())).rejects.toBeInstanceOf(InvoicingTransientError);
+    const retried = await alegra.issueDocument(input());
+    expect(retried).toMatchObject({ status: "accepted", providerReference: "77" });
+    expect(calls.filter((call) => call.init.method === "POST")).toHaveLength(1);
+  });
+
+  test("a lookup hit for a different key (prefix collision) is not a match", async () => {
+    const other = { ...acceptedBody, id: 5, observations: "restack:doc-10" };
+    const { provider: alegra } = provider([json([other])]);
+    expect(await alegra.findDocument({ idempotencyKey: "doc-1" })).toBeNull();
+  });
+
+  test("sends integer unit prices that reproduce the line base exactly", async () => {
+    const { calls, provider: alegra } = provider([json([]), json(acceptedBody)]);
+    await alegra.issueDocument(
+      input({
+        lines: [
+          {
+            name: "Soda",
+            quantity: 3,
+            base: 10_001,
+            tax: 800,
+            total: 10_801,
+            taxClass: "impoconsumo",
+          },
+          { name: "Fries", quantity: 2, base: 10_000, tax: 800, total: 10_800, taxClass: "iva" },
+        ],
+      }),
+    );
+    const { items } = JSON.parse(String(calls[1]!.init.body));
+    expect(items).toHaveLength(2);
+    for (const [index, base] of [10_001, 10_000].entries()) {
+      expect(Number.isInteger(items[index].price)).toBe(true);
+      expect(items[index].quantity * items[index].price).toBe(base);
+    }
+    expect(items[0].quantity).toBe(1);
+    expect(items[0].name).toContain("x3");
+    expect(items[1]).toMatchObject({ quantity: 2, price: 5_000 });
+  });
+
+  test("sends the tax our Bill computed for each line", async () => {
+    const { calls, provider: alegra } = provider([json([]), json(acceptedBody)]);
+    await alegra.issueDocument(input());
+    const { items } = JSON.parse(String(calls[1]!.init.body));
+    expect(items[0].tax).toEqual([{ name: "impoconsumo", amount: 2_963 }]);
+  });
+
+  test("the POS equivalent and the factura are different requests", async () => {
+    const { calls, provider: alegra } = provider([
+      json([]),
+      json(acceptedBody),
+      json([]),
+      json(acceptedBody),
+    ]);
+    await alegra.issueDocument(input({ kind: "pos_equivalent" }));
+    await alegra.issueDocument(input({ kind: "factura" }));
+    const pos = JSON.parse(String(calls[1]!.init.body));
+    const factura = JSON.parse(String(calls[3]!.init.body));
+    expect(pos.documentType).not.toBe(factura.documentType);
+    expect(pos.documentType).toBeDefined();
   });
 
   test("habilitación is read from the company electronic invoicing settings", async () => {

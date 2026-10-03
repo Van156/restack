@@ -89,9 +89,10 @@ Port, fake, factory and Alegra adapter: `packages/api/src/lib/invoicing/`. The p
 
 Verified in Alegra's reference: basic auth with email and token, `POST /invoices` on `https://api.alegra.com/api/v1`, the `stamp` object, and a 400 with an error `message` (and a draft invoice) when stamping fails. Assumed, to confirm against the sandbox with the contract test (`ALEGRA_SANDBOX_EMAIL`, `ALEGRA_SANDBOX_TOKEN`, optional `ALEGRA_SANDBOX_COMPANY` and `ALEGRA_SANDBOX_BASE_URL`; skipped when absent):
 
-- Inline items (`name`, `quantity`, `price`) instead of Alegra item ids, `numberTemplate.prefix` selecting the numbering, and `company` carrying the associated company.
-- The POS equivalent document goes through the same endpoint; its availability for associated companies is unconfirmed.
-- No native idempotency key: the key travels in `observations` as `restack:<key>` and `findDocument` searches `GET /invoices?query=`. The database unique per Bill and kind is the real guarantee.
+- Inline items (`name`, `quantity`, `price`, `tax`) instead of Alegra item ids, `numberTemplate.prefix` selecting the numbering, and `company` carrying the associated company.
+- Integer COP: `price` is `base / quantity` only when that is a whole number; otherwise the line goes as quantity 1 at the line base with `x<quantity>` in the name, so the provider reproduces the base exactly. The line tax is sent as `tax: [{ name: <taxClass>, amount: <our tax> }]` so the provider total matches our Bill; that it honours an explicit amount (instead of recomputing from a rate) is unconfirmed.
+- The document kind travels as `documentType`: `POS` for the POS equivalent, `INVOICE` for a factura, on the same endpoint. The field name, its values and the POS equivalent's availability for associated companies are unconfirmed. The numbering prefix is one per connection and does not vary by kind.
+- No native idempotency key: the key travels in `observations` as `restack:<key>`. `issueDocument` first searches `GET /invoices?query=` and returns the invoice already carrying that exact key (the search is textual, so `doc-1` also hits `doc-10` and only an exact match counts); a POST that timed out after creating the invoice is therefore never repeated. A draft left by a failed stamp has no `stamp` and is not found, so a retry creates a new one. The database unique per Bill and kind is the other guarantee.
 - Response fields `stamp.cufe`, `stamp.barCodeContent`, `numberTemplate.fullNumber`; habilitación from `GET /company` `electronicInvoicing.status`.
 - HTTP 5xx, 429, 408 and network failures are transient; other 4xx are rejections.
 
