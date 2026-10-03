@@ -1,20 +1,30 @@
+import { z } from "zod";
+
+const reasonId = z.enum(["need_something", "cutlery_napkins", "pay"]);
 /** A Waiter call reason as the public endpoint names it. */
-export type GuestReasonId = "need_something" | "cutlery_napkins" | "pay";
+export type GuestReasonId = z.infer<typeof reasonId>;
 
 /** What the public endpoint says about a Table; nothing beyond the call function. */
-export type GuestState =
-  | { status: "closed"; message: string }
-  | { status: "offline"; message: string }
-  | {
-      status: "open";
-      table: { name: string };
-      reasons: readonly { id: GuestReasonId; label: string }[];
-      call: { reason: GuestReasonId; status: "open" | "on_the_way" } | null;
-      cooldownUntil: string | null;
-      canCall: boolean;
-    };
+const guestStateSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("closed"), message: z.string() }),
+  z.object({ status: z.literal("offline"), message: z.string() }),
+  z.object({
+    status: z.literal("open"),
+    table: z.object({ name: z.string() }),
+    reasons: z.array(z.object({ id: reasonId, label: z.string() })).readonly(),
+    call: z.object({ reason: reasonId, status: z.enum(["open", "on_the_way"]) }).nullable(),
+    cooldownUntil: z.string().nullable(),
+    canCall: z.boolean(),
+  }),
+]);
+export type GuestState = z.infer<typeof guestStateSchema>;
 
-export type RefusalReason = "closed" | "offline" | "call_open" | "cooldown";
+const refusalSchema = z.object({
+  status: z.enum(["closed", "offline", "call_open", "cooldown"]),
+  state: guestStateSchema,
+  retryAfterSeconds: z.number().optional(),
+});
+export type RefusalReason = z.infer<typeof refusalSchema>["status"];
 
 export type GuestResponse =
   | { kind: "state"; state: GuestState }
@@ -38,14 +48,16 @@ function retryAfter(response: Response): number {
   return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : DEFAULT_RETRY_SECONDS;
 }
 
-async function readJson(response: Response): Promise<Record<string, unknown> | null> {
+async function readJson(response: Response): Promise<unknown> {
   try {
-    const body: unknown = await response.json();
-    return typeof body === "object" && body !== null ? (body as Record<string, unknown>) : null;
+    return await response.json();
   } catch {
     return null;
   }
 }
+
+const expiredSchema = z.object({ message: z.string() });
+const EXPIRED_MESSAGE = "Este código QR venció.";
 
 async function toResult(response: Response): Promise<GuestResult> {
   if (response.status === 429) {
@@ -55,36 +67,34 @@ async function toResult(response: Response): Promise<GuestResult> {
     return { kind: "invalid" };
   }
   const body = await readJson(response);
-  if (!body) {
+  if (body === null || typeof body !== "object") {
     return { kind: "error" };
   }
   if (response.status === 410) {
-    return {
-      kind: "expired",
-      message: typeof body.message === "string" ? body.message : "Este código QR venció.",
-    };
+    const expired = expiredSchema.safeParse(body);
+    return { kind: "expired", message: expired.success ? expired.data.message : EXPIRED_MESSAGE };
   }
-  if (response.status === 409 && typeof body.status === "string" && body.state) {
-    const reason = body.status as RefusalReason;
-    return {
-      kind: "refused",
-      reason,
-      state: body.state as GuestState,
-      ...(typeof body.retryAfterSeconds === "number"
-        ? { retryAfterSeconds: body.retryAfterSeconds }
-        : {}),
-    };
+  if (response.status === 409) {
+    const refusal = refusalSchema.safeParse(body);
+    return refusal.success
+      ? {
+          kind: "refused",
+          reason: refusal.data.status,
+          state: refusal.data.state,
+          ...(refusal.data.retryAfterSeconds === undefined
+            ? {}
+            : { retryAfterSeconds: refusal.data.retryAfterSeconds }),
+        }
+      : { kind: "error" };
   }
-  if (response.ok && typeof body.status === "string") {
-    return { kind: "state", state: body as GuestState };
+  if (response.ok) {
+    const state = guestStateSchema.safeParse(body);
+    return state.success ? { kind: "state", state: state.data } : { kind: "error" };
   }
   return { kind: "error" };
 }
 
-/**
- * Client of the public Waiter call endpoint. The guest id travels on every request so the server
- * can tell guests of one Table apart; there are no cookies.
- */
+/** Client of the public Waiter call endpoint; the guest id travels on every request, no cookies. */
 export function createGuestClient({
   baseUrl,
   guestId,

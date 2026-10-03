@@ -117,6 +117,31 @@ describe("createGuestClient", () => {
     expect(open).toEqual({ kind: "refused", reason: "call_open", state: openState });
   });
 
+  test("a state that does not have the documented shape is a plain error", async () => {
+    const malformed = [
+      { status: "open", table: { name: "Mesa 4" } },
+      { ...openState, reasons: [{ id: "free_dessert", label: "Postre gratis" }] },
+      { ...openState, canCall: "yes" },
+      { status: "something_else" },
+    ];
+    for (const body of malformed) {
+      expect(await client(fakeFetch(() => json(body)).fetcher).getState("t")).toEqual({
+        kind: "error",
+      });
+    }
+    expect(
+      await client(
+        fakeFetch(() => json({ status: "cooldown", state: { status: "open" } }, 409)).fetcher,
+      ).call("t", "pay"),
+    ).toEqual({ kind: "error" });
+    expect(
+      await client(fakeFetch(() => json({ status: "nope", state: openState }, 409)).fetcher).call(
+        "t",
+        "pay",
+      ),
+    ).toEqual({ kind: "error" });
+  });
+
   test("a network failure, a 5xx or an unreadable body is a plain error", async () => {
     const network = await client(
       fakeFetch(() => {
