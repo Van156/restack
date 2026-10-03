@@ -92,4 +92,5 @@ export const APP_PRESENTATIONAL_COMPONENTS: readonly string[] = [
   "features/dian/components/outbox-view.tsx",
   "features/dian/components/incidents-view.tsx",
   "features/dian/components/document-counts-view.tsx",
+  "features/guest-call/components/guest-call-view.tsx",
 ];

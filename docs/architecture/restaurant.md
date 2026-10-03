@@ -247,6 +247,8 @@ Staff side: `packages/api/src/routers/restaurant/waiter-call*.ts` (`appRouter.re
 
 ### Public routes
 
+The web page that calls them is `/m/$token`, see [web-app.md](./web-app.md#guest-waiter-call-page).
+
 Only two, both by token in the path and with no auth session: `GET /:token` (state) and `POST /:token` (body `{ reason }`, one of `need_something`, `cutlery_napkins`, `pay`; the page labels are "Necesito algo", "Más cubiertos o servilletas", "Quiero pagar").
 
 - State: `closed` (settled Table, "Esta mesa ya cerró. Gracias por venir."), `offline` (no Table name, no reasons, no button: "El restaurante está sin conexión. Llama a tu mesero con la mano."), or `open` with the Table name, the reasons, the Table's own call (`reason` and `open` or `on_the_way`), `cooldownUntil` and `canCall`. Nothing else leaves: no ids, menu, order, price or Staff name, and the call carries no id.
